@@ -18,6 +18,24 @@
 
 途中で人間を呼ぶのは、許可範囲の変更、不可逆な副作用、境界違反、証拠不足が発生した場合に限ります。
 
+### 1.1 配布とインストールの前提
+
+このスキル群は、Vercel Labsの[`skills`](https://github.com/vercel-labs/skills) CLIからインストールする構成とします。CLIはリポジトリの`skills/`を探索し、各`SKILL.md`を個別のスキルとして検出します。
+
+通常は、内部ルーティングに必要なスキルを欠かさないよう、一式をプロジェクトへインストールします。
+
+```bash
+npx skills add 53able/agent-safety-lifecycle --skill '*'
+```
+
+特定のエージェントへ限定する場合は`--agent`を指定します。
+
+```bash
+npx skills add 53able/agent-safety-lifecycle --skill '*' --agent codex
+```
+
+`agent-safety-lifecycle`は同じリポジトリ内の専門スキルへ処理を振り分けるため、ルーターだけを単独でインストールする構成は標準運用にしません。個別インストールは、専門スキルを単独で試す場合に限定します。
+
 ## 2. 想定利用者
 
 主な利用者は、AIエージェントへコード変更やコマンド実行を任せたい開発者と、チーム向けのAI実行基盤を整備する担当者です。
