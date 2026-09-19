@@ -154,6 +154,17 @@ npx skills update agent-autonomy-envelope agent-result-gate -p
 
 設計ドキュメントは[設計概要](docs/design.md)を入口に、[アーキテクチャ](docs/architecture.md)、[スキルカタログ](docs/skill-catalog.md)、[自律実行とハンドオフ](docs/autonomy-and-handoffs.md)、[検証戦略](docs/validation.md)、[実装ロードマップ](docs/implementation-roadmap.md)へ分割しています。
 
+## バージョニング
+
+このリポジトリ全体を一つのスキルスイートとして[Semantic Versioning](https://semver.org/lang/ja/)で管理します。`pyproject.toml`の`project.version`をバージョンの正本とし、Gitタグには`v`接頭辞を付けます。
+
+`1.0.0`より前は、次の基準で更新します。
+
+- **minor**：スキルの追加、公開契約やschemaの互換性を壊す変更
+- **patch**：後方互換な修正、検証強化、ドキュメント更新
+
+`1.0.0`以降は、互換性を壊す変更でmajorを更新します。変更履歴と未検証事項は[CHANGELOG](CHANGELOG.md)で確認できます。
+
 ## Security boundary
 
 Agent Skillsは手順と判断規則を提供しますが、OSレベルの強制境界ではありません。実際の隔離には、guest VM、read-only mount、network policy、credential broker、resource limit、host-side result gateなどが必要です。
@@ -189,6 +200,7 @@ python3 -m unittest discover -s tests -v
 - [自律実行とハンドオフ](docs/autonomy-and-handoffs.md)
 - [検証戦略](docs/validation.md)
 - [実装ロードマップ](docs/implementation-roadmap.md)
+- [変更履歴](CHANGELOG.md)
 
 ## License
 
