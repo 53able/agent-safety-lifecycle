@@ -1,0 +1,21 @@
+{
+  "failure_id": "replace-me",
+  "status": "OBSERVED",
+  "evidence": [],
+  "reproduction": {
+    "command": "",
+    "expected": "",
+    "observed": ""
+  },
+  "guardrail": {
+    "type": "",
+    "change": "",
+    "owner": "",
+    "undo": ""
+  },
+  "verification": {
+    "negative_case": "NOT_RUN",
+    "positive_case": "NOT_RUN",
+    "evidence": []
+  }
+}

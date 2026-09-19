@@ -1,0 +1,15 @@
+{
+  "task_id": "replace-me",
+  "artifact_root": "replace-me",
+  "checks": {
+    "artifact-structure": {"status": "NOT_RUN", "evidence": []},
+    "secret-scan": {"status": "NOT_RUN", "evidence": []},
+    "dependency-review": {"status": "NOT_RUN", "evidence": []},
+    "test-results": {"status": "NOT_RUN", "evidence": []},
+    "side-effect-review": {"status": "NOT_RUN", "evidence": []},
+    "rollback-review": {"status": "NOT_RUN", "evidence": []}
+  },
+  "decision": "UNVERIFIED",
+  "evidence": [],
+  "destination": "replace-me"
+}

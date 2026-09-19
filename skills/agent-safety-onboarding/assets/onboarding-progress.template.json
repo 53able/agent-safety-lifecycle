@@ -1,0 +1,36 @@
+{
+  "participant": "replace-me",
+  "current_level": 1,
+  "levels": [
+    {
+      "level": 1,
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "level": 2,
+      "status": "NOT_STARTED",
+      "evidence": []
+    },
+    {
+      "level": 3,
+      "status": "NOT_STARTED",
+      "evidence": []
+    },
+    {
+      "level": 4,
+      "status": "NOT_STARTED",
+      "evidence": []
+    },
+    {
+      "level": 5,
+      "status": "NOT_STARTED",
+      "evidence": []
+    },
+    {
+      "level": 6,
+      "status": "NOT_STARTED",
+      "evidence": []
+    }
+  ]
+}

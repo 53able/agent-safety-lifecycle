@@ -1,0 +1,50 @@
+{
+  "configuration_id": "replace-me",
+  "tests": [
+    {
+      "class": "mount",
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "class": "credential",
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "class": "network",
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "class": "command",
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "class": "resource",
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "class": "supply-chain",
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "class": "side-effect",
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "class": "duplicate-execution",
+      "status": "UNVERIFIED",
+      "evidence": []
+    },
+    {
+      "class": "cleanup",
+      "status": "UNVERIFIED",
+      "evidence": []
+    }
+  ]
+}

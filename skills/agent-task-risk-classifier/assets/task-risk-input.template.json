@@ -1,0 +1,10 @@
+{
+  "task_id": "replace-me",
+  "needs_command_execution": false,
+  "needs_file_write": false,
+  "needs_secrets": false,
+  "needs_external_network": false,
+  "needs_external_write": false,
+  "irreversible_or_high_impact": false,
+  "unknown_fields": []
+}

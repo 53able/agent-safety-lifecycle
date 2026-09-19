@@ -1,0 +1,44 @@
+{
+  "task_id": "replace-me",
+  "profile": "isolated-execution",
+  "execution_host": "guest-vm",
+  "inputs": [
+    {
+      "name": "source-snapshot",
+      "mode": "read-only"
+    }
+  ],
+  "allowed": [
+    "edit-guest-scratch",
+    "run-build",
+    "run-tests",
+    "export-patch"
+  ],
+  "denied": [
+    "read-host-home",
+    "inherit-host-environment",
+    "use-ssh-agent",
+    "access-control-socket",
+    "git-push",
+    "deploy",
+    "access-production",
+    "arbitrary-external-network"
+  ],
+  "network": {
+    "default": "deny",
+    "allow": []
+  },
+  "credentials": {
+    "mode": "none",
+    "task_scoped_broker": false
+  },
+  "limits": {
+    "wall_time_seconds": 1800,
+    "retry_count": 3,
+    "output_bytes": 104857600
+  },
+  "outputs": [
+    "patch",
+    "test-log"
+  ]
+}

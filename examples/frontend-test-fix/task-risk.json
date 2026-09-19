@@ -1,0 +1,10 @@
+{
+  "task_id": "frontend-test-fix",
+  "needs_command_execution": true,
+  "needs_file_write": true,
+  "needs_secrets": false,
+  "needs_external_network": false,
+  "needs_external_write": false,
+  "irreversible_or_high_impact": false,
+  "unknown_fields": []
+}
