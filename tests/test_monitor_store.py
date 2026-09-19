@@ -8,7 +8,9 @@ from unittest import mock
 
 from tools.safety_monitor.events import EventError, PersistedEvent, parse_producer
 from tools.safety_monitor.recording import Recorder, RecordingError
-from tools.safety_monitor.store import MAX_REPLAY_BYTES, MAX_REPLAY_LINE_BYTES, EventStore, StoreError, read_events
+from tools.safety_monitor.store import (
+    MAX_REPLAY_BYTES, MAX_REPLAY_LINE_BYTES, EventStore, StoreError, read_events, read_history,
+)
 
 HASH = "sha256:" + "0" * 64
 TIME = "2026-09-19T08:00:00Z"
@@ -172,6 +174,48 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, "LOG_TOO_LARGE")
             self.assertEqual((self.events / "run-1/events.ndjson").read_bytes(), before)
             self.assertEqual(len(self.store.read("run-1")), 1)
+
+    def test_cursor_filters_only_after_validating_the_whole_log(self):
+        self.recorder.record(event(), "validator")
+        self.recorder.record(event("STATE_TRANSITION", "producer-2"), "validator")
+        self.assertEqual([item.sequence for item in read_events(self.events, "run-1", self.root, 0)], [1, 2])
+        self.assertEqual([item.sequence for item in read_events(self.events, "run-1", self.root, 1)], [2])
+        self.assertEqual(read_events(self.events, "run-1", self.root, 2), [])
+        batch = read_history(self.events, "run-1", self.root, 1)
+        self.assertEqual(batch.after_sequence, 1)
+        self.assertEqual([item.sequence for item in batch.history], [1, 2])
+        self.assertEqual([item.sequence for item in batch.suffix], [2])
+        for cursor in (-1, True, 1.5):
+            with self.subTest(cursor=cursor), self.assertRaises(StoreError) as caught:
+                read_events(self.events, "run-1", self.root, cursor)  # type: ignore[arg-type]
+            self.assertEqual(caught.exception.code, "INVALID_CURSOR")
+        with self.assertRaises(StoreError) as caught:
+            read_events(self.events, "run-1", self.root, 3)
+        self.assertEqual(caught.exception.code, "CURSOR_AHEAD")
+
+    def test_cursor_does_not_hide_corrupt_prefix_or_truncation(self):
+        self.recorder.record(event(), "validator")
+        self.recorder.record(event("STATE_TRANSITION", "producer-2"), "validator")
+        path = self.events / "run-1/events.ndjson"
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        records[0]["sequence"] = 9
+        path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+        with self.assertRaises(StoreError) as caught:
+            read_events(self.events, "run-1", self.root, 1)
+        self.assertEqual(caught.exception.code, "CORRUPT_LOG")
+        path.unlink()
+        with self.assertRaises(StoreError) as truncated:
+            read_events(self.events, "run-1", self.root, 1)
+        self.assertEqual(truncated.exception.code, "CURSOR_AHEAD")
+
+    def test_cursor_read_is_filesystem_read_only(self):
+        self.recorder.record(event(), "validator")
+        path = self.events / "run-1/events.ndjson"
+        before_bytes = path.read_bytes()
+        before_entries = sorted(str(item.relative_to(self.root)) for item in self.root.rglob("*"))
+        read_events(self.events, "run-1", self.root, 0)
+        self.assertEqual(path.read_bytes(), before_bytes)
+        self.assertEqual(sorted(str(item.relative_to(self.root)) for item in self.root.rglob("*")), before_entries)
 
     def test_replay_rejects_line_and_total_byte_overflow(self):
         run = self.events / "run-1"

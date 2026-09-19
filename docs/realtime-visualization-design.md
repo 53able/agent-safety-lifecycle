@@ -1,10 +1,16 @@
 # Agent Safety Lifecycle リアルタイム可視化 Design Doc
 
-- **Status:** Proposed
+- **Status:** Partially implemented（Phase 3 read-only one-run watchまで。後続phaseはProposed）
 - **対象リポジトリ:** [`53able/agent-safety-lifecycle`](https://github.com/53able/agent-safety-lifecycle)
 - **基準リビジョン:** `df510044d332a64a9ab710fd42b7732caf887273`（v0.1.0）
 - **対象変更:** エージェントの実行状態、権限境界、承認待ち、成果物検査をローカル画面でリアルタイム表示する
 - **対象外:** sandbox、credential broker、承認機構そのものの実装
+
+### 実装状況（2026-09-19）
+
+commit `7ea5e2a`を基準に、Phase 3の限定incrementとして`python3 -m tools.safety_monitor watch`を実装した。対象は1 run、read-only、現行の`RUN_CREATED` / `STATE_TRANSITION` schemaだけである。sequence cursorでpollするが、cursor以前を含むbounded log全体を毎回検査し、完全な新規batchがvalidな場合だけprojectionとcursorをcommitする。idle pollはframeを増やさず、一時的なread failureでは最後のvalid frameとcursorを保持して復帰する。timelineは100件を上限とする。
+
+TTYかつ`NO_COLOR`なしの場合だけpresenter所有の固定ANSI clear/home prefixを使う。非TTYまたは`NO_COLOR`ありではANSI-free frameを追記する。capabilityおよびresult-gate event/v2 evidenceは現行schemaにないため、実データを推測せず静的なunavailable placeholderを表示する。heartbeat、操作keybinding、tail修復/quarantine、複数writer、browser、runtime固有adapter、result-gate v2、package releaseはこのincrementに含まれない。
 
 ## 1. 要約
 
@@ -317,7 +323,7 @@ Presenterは安全判断を行わず、状態を補正しない。
 - 色だけに依存せず、ラベルと記号を併用する。
 - 狭いterminalではsummaryを切り詰めても、run state、handoff、result gate、stream integrityを常に残す。
 
-v1では書込み操作とkeybindingを持たない。`--once`でsnapshot、`--watch`で継続表示する。
+v1では書込み操作とkeybindingを持たない。`snapshot` subcommandでone-shot表示、`watch` subcommandで継続表示する。
 
 ## 10. Event contract
 
@@ -524,8 +530,8 @@ AWAITING_RESULT_GATE
 ### 12.3 TUIの動作
 
 - Agent本体とは別terminalまたはpaneで起動する。
-- `--once`は現在snapshotを一度だけ出力する。
-- `--watch`はevent logをpollし、設計目標として1秒以内に表示へ反映する。
+- `snapshot` subcommandは現在snapshotを一度だけ出力する。
+- `watch` subcommandはevent logをpollし、設計目標として1秒以内に表示へ反映する。
 - TTYではANSI redrawを使用できるが、event由来文字列を制御sequenceへ連結しない。
 - 非TTY、`NO_COLOR`、幅の狭いterminalでも、文字ラベルだけで状態を判別できるようにする。
 - terminal幅、切詰め、Unicode幅の扱いはcomponent testと実terminal確認の両方で検証する。
@@ -565,11 +571,13 @@ trusted adapterはhost側、agent runtimeはguest側に分離する。guestか�
 
 ## 14. 失敗時の振る舞い
 
-| 失敗 | 振る舞い |
+この表は完成形のtarget behaviorであり、Phase 3限定incrementの実装済み範囲を示す表ではない。現行`watch`でNDJSON末尾が不完全な場合は、最後のvalid frameとcursorを保持して同じcursorからreadを再試行する。部分logを`INCOMPLETE`として表示せず、修復・quarantineもしない。writerも不完全末尾への追記を拒否する。下表のtail replay/quarantineは後続phaseへdeferする。
+
+| 失敗 | target behavior |
 |---|---|
 | event schema不正 | 保存せず`INVALID_EVENT`を別監査ログへ記録する |
 | 不正な状態遷移 | projectionを変更せず警告する |
-| NDJSON末尾が不完全 | 最後の完全なeventまで再生し、`stream_integrity=INCOMPLETE`と表示する。次回append前に末尾をquarantineする |
+| NDJSON末尾が不完全（deferred） | 最後の完全なeventまで再生し、`stream_integrity=INCOMPLETE`と表示する。次回append前に末尾をquarantineする |
 | sequence欠番 | run stateを変えず`stream_integrity=INCOMPLETE`とし、再取得を要求する |
 | event log read失敗 | 最後に表示したsequenceを保持して待機し、回復後に差分を読む。process再起動時はfull replayする |
 | TUI停止 | event producerや既存validatorを止めない。再起動後にeventを再生する |
@@ -676,14 +684,15 @@ v1のredaction規則は安全policyの一部であり、差し替え要件が確
 
 **停止条件:** 複数writerが必要になった場合、暗黙にロックを追加せず、所有者と順序保証を再設計する。
 
-### Phase 3：読み取り専用live TUI
+### Phase 3：読み取り専用live TUI（限定increment実装済み）
 
-- `--once`と`--watch`を実装する。
-- `--watch`はNDJSONをsequence cursorでpollし、1 run、heartbeatなし、上限付きtimelineを表示する。
-- TTYではatomic redraw、非TTYではnewline-delimited snapshotを出力する。
-- 状態、能力、timeline、result gate、未検証事項を表示する。
-- terminal control injection、path traversal、偽source、大きなeventを反証テストする。
-- 既存validatorを連続実行する実flowを別paneから観測し、保存済みreplayだけでなくlive追従を確認する。
+- one-shotは既存の`snapshot` subcommand、live追従は`watch` subcommandとして実装した。
+- `watch`はNDJSONをsequence cursorでpollし、1 run、heartbeatなし、100件上限のtimelineを表示する。各pollは1回のbounded full-history readを完全にreplayし、commit済みcursor以前のeventがin-memory historyと完全一致することを確認してからsuffixをcommitする。
+- TTYかつ`NO_COLOR`なしでは固定ANSI prefixでredrawし、それ以外ではANSI-free snapshotを追記する。
+- 状態とtimelineを表示する。能力とresult gateは現行schemaで観測できないため、静的なunavailable placeholderに限定する。
+- terminal control injection、cursor以前の不正遷移と合法だが内容が変わるrewrite、run isolation、batch atomicity、read-only性を自動テストする。このrewrite検出は同一process内の履歴整合性検査であり、durable tamper proofではない。再起動時はその時点のbounded historyがvalidなら現在内容を信頼する。
+- 不完全末尾は最後のvalid frameとcursorを保持して再試行する。修復・quarantineはPhase 3に含めず、Section 14のtarget behaviorへdeferする。
+- PTY/TTYと非TTY/`NO_COLOR` smoke testでlive viewerの出力byteとevent log hash不変を確認する。
 
 ### Phase 4：追加runtime adapter
 
@@ -719,7 +728,7 @@ TUIからの承認・停止操作、heartbeat、browser、remote modeは別Desig
 | O-12 | UI障害がrunを変更しない | monitor停止 | run stateは不変 |
 | O-13 | viewer再起動後に追従できる | TUI停止中にeventを追加して再起動 | full replay後、最終sequence以降だけを追従 |
 | O-14 | terminal stateを保護する | terminal後のstate event | 拒否 |
-| O-15 | crash後も採番が衝突しない | 不完全末尾を含むlogで再起動 | 末尾をquarantineし、最終正常sequenceから再開 |
+| O-15（deferred。Phase 3未実装） | crash後も採番が衝突しない | 不完全末尾を含むlogで再起動 | 末尾をquarantineし、最終正常sequenceから再開 |
 | O-16 | adapterが別sourceを名乗れない | agent adapterのtokenでvalidator eventを送信 | 拒否して監査記録 |
 | O-17 | 同時transitionを直列化する | 同じRUNNINGを前提に2件を並行送信 | 一方だけを先にcommitし、他方を最新projectionで再検査 |
 | O-18 | 任意artifact rootを受け付けない | `/`、host home、allowlist外root | RUN_CREATED拒否 |

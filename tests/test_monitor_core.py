@@ -1,7 +1,9 @@
 import unittest
+from unittest import mock
 
+from tools.safety_monitor import projection as projection_module
 from tools.safety_monitor.events import EventError, PersistedEvent, parse_producer
-from tools.safety_monitor.presenter import escape_text, render_snapshot
+from tools.safety_monitor.presenter import ANSI_REDRAW_PREFIX, escape_text, render_frame, render_snapshot
 from tools.safety_monitor.projection import RunProjection, apply_event, replay
 
 HASH = "sha256:" + "0" * 64
@@ -101,12 +103,58 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual((projection.run_state, projection.last_sequence), ("FAILED", 2))
         self.assertEqual(projection.stream_integrity, "INVALID")
 
+    def test_large_replay_accumulates_ids_once_and_freezes_once(self):
+        event_count = 16_000
+        events = [self.creation()]
+        state = "PLANNED"
+        for sequence in range(2, event_count + 1):
+            target = "RUNNING" if state in {"PLANNED", "RETRYING"} else "RETRYING"
+            events.append(persisted(
+                producer(
+                    "STATE_TRANSITION",
+                    f"event-{sequence}",
+                    state={"from": state, "to": target},
+                ),
+                sequence,
+                f"store-{sequence}",
+            ))
+            state = target
+
+        accumulator = projection_module._ProducerIdAccumulator
+        original_add = accumulator.add
+        original_freeze = accumulator.freeze
+        with (
+            mock.patch.object(accumulator, "add", autospec=True, side_effect=original_add) as add,
+            mock.patch.object(accumulator, "freeze", autospec=True, side_effect=original_freeze) as freeze,
+        ):
+            projection = replay(events)
+
+        self.assertEqual(projection.last_sequence, event_count)
+        self.assertEqual(len(projection.producer_event_ids), event_count)
+        self.assertIsInstance(projection.producer_event_ids, frozenset)
+        self.assertEqual(add.call_count, event_count)
+        freeze.assert_called_once_with(mock.ANY)
+
+    def test_single_event_apply_keeps_both_projections_immutable(self):
+        initial = RunProjection()
+        created_projection = apply_event(initial, self.creation())
+        transitioned_projection = apply_event(created_projection, self.transition())
+        self.assertEqual(initial.producer_event_ids, frozenset())
+        self.assertEqual(created_projection.producer_event_ids, frozenset({"event-1"}))
+        self.assertEqual(transitioned_projection.producer_event_ids, frozenset({"event-1", "event-2"}))
+        self.assertIsInstance(transitioned_projection.producer_event_ids, frozenset)
+
     def test_presenter_has_no_raw_terminal_controls(self):
         self.assertEqual(escape_text("x\x1b\u202ey"), "x\\u001b\\u202ey")
         projection = RunProjection(task_id="x\x1b", run_id="run", run_state="PLANNED")
         output = render_snapshot(projection)
         self.assertNotIn("\x1b", output)
         self.assertIn("\\u001b", output)
+        self.assertIn("Capabilities: UNAVAILABLE", output)
+        self.assertIn("result-gate events and v2 evidence are unavailable", output)
+        frame = render_frame(projection, ansi_redraw=True)
+        self.assertEqual(frame[:len(ANSI_REDRAW_PREFIX)], ANSI_REDRAW_PREFIX)
+        self.assertNotIn("\x1b", frame[len(ANSI_REDRAW_PREFIX):])
 
 
 if __name__ == "__main__": unittest.main()

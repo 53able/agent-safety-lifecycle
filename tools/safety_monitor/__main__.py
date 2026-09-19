@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import secrets
 import subprocess
@@ -15,7 +16,8 @@ from pathlib import Path
 from .ipc import IPCError, serve
 from .presenter import render_snapshot
 from .projection import replay
-from .store import StoreError, read_events
+from .store import StoreError, read_events, read_history
+from .watch import WatchError, watch_run
 
 
 def _now() -> str:
@@ -31,6 +33,16 @@ def _snapshot(event_root: Path, run_id: str, allowed_parent: Path, artifact_root
     if not projection.is_valid:
         raise StoreError("INTEGRITY_FAILURE", "; ".join(projection.warnings))
     return render_snapshot(projection)
+
+
+def _positive_interval(value: str) -> float:
+    try:
+        interval = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("poll interval must be a positive number") from exc
+    if not math.isfinite(interval) or interval <= 0:
+        raise argparse.ArgumentTypeError("poll interval must be a positive number")
+    return interval
 
 
 def _pipe_with_token(token: str) -> tuple[int, int]:
@@ -132,6 +144,11 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot.add_argument("--event-root", required=True, type=Path)
     snapshot.add_argument("--allowed-parent", required=True, type=Path)
     snapshot.add_argument("--run-id", required=True)
+    watch = subparsers.add_parser("watch", help="follow one saved run read-only until Ctrl-C")
+    watch.add_argument("--event-root", required=True, type=Path)
+    watch.add_argument("--allowed-parent", required=True, type=Path)
+    watch.add_argument("--run-id", required=True)
+    watch.add_argument("--poll-interval", type=_positive_interval, default=0.5)
     internal = subparsers.add_parser("_serve", help=argparse.SUPPRESS)
     internal.add_argument("--socket", required=True, type=Path)
     internal.add_argument("--event-root", required=True, type=Path)
@@ -150,13 +167,26 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.command == "snapshot":
             sys.stdout.write(_snapshot(arguments.event_root, arguments.run_id, arguments.allowed_parent))
             return 0
+        if arguments.command == "watch":
+            reader = lambda run_id, cursor: read_history(
+                arguments.event_root, run_id, arguments.allowed_parent, cursor,
+            )
+            ansi_redraw = bool(sys.stdout.isatty()) and "NO_COLOR" not in os.environ
+            try:
+                watch_run(
+                    arguments.run_id, reader, time.sleep, sys.stdout, sys.stderr,
+                    poll_interval=arguments.poll_interval, ansi_redraw=ansi_redraw,
+                )
+            except KeyboardInterrupt:
+                return 130
+            return 0
         if arguments.command == "_serve":
             serve(
                 arguments.socket, arguments.event_root, arguments.artifact_root, arguments.allowed_parent,
                 arguments.token_fd, arguments.max_requests,
             )
             return 0
-    except (ValueError, OSError, RuntimeError, StoreError, IPCError, subprocess.TimeoutExpired) as exc:
+    except (ValueError, OSError, RuntimeError, StoreError, WatchError, IPCError, subprocess.TimeoutExpired) as exc:
         print(f"safety-monitor failed: {exc}", file=sys.stderr)
         return 1
     return 2

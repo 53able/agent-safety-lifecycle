@@ -135,8 +135,19 @@ python3 -m tools.safety_monitor snapshot \
   --allowed-parent "$DEMO_ROOT" \
   --event-root "$DEMO_ROOT/events" \
   --run-id demo-run
+python3 -m tools.safety_monitor watch \
+  --allowed-parent "$DEMO_ROOT" \
+  --event-root "$DEMO_ROOT/events" \
+  --run-id demo-run
+# Ctrl-C: exit status 130
 ```
 
-期待値は2 event、sequence `1, 2`、source `validator`、最終state `RUNNING`、stream `OK`です。ここで`OK`はschema、sequence、projectionの構造検査に通ったことだけを表し、logの真正性や改ざん耐性を証明しません。snapshot replayはファイルを追加・変更しません。testsは、control/bidi文字、既知secret pattern、unknown field、source spoof、bad token、unsafe/overlapping root、audit pathのsymlink、oversized request、bounded replay、欠番、不完全tail、初回append失敗後のretry、terminal後event、result-gate v2なしのcompletionを反証します。
+期待値は2 event、sequence `1, 2`、source `validator`、最終state `RUNNING`、stream `OK`です。ここで`OK`はschema、連続sequence、projectionの構造検査に通ったことだけを表し、logの真正性や改ざん耐性を証明しません。snapshotとwatchはevent storeへ書き込みません。testsは、control/bidi文字、既知secret pattern、unknown field、source spoof、bad token、unsafe/overlapping root、audit pathのsymlink、oversized request、bounded replay、cursor以前の破損、欠番、不完全tail、初回append失敗後のretry、terminal後event、result-gate v2なしのcompletionを反証します。
 
-対象はPOSIX owner-only `AF_UNIX` ingressと単一のwriter processです。replay上限は1行64 KiB、1 log 8 MiBです。同一event rootへの複数writer、ack喪失時の再送、partial-tail修復、cryptographic tamper detectionは未対応です。既知のcredential patternは保存前に拒否しますが、未知形式の秘密情報は検出できません。破損ログと`COMPLETED`はfail closedにします。これはreplay-firstの開発toolであり、live監視、ANSI TUI、sandbox、承認、Skills CLI配布を検証するものではありません。
+watch component testsはwall-clock sleepを使わず、reader、waiter、output、ANSI modeを注入します。initial replay、idle時のduplicate suppression、一時read failure後の同一cursorからの復帰、batch単位のprojection commit、run isolation、100件timeline、固定ANSI prefix、非TTY/`NO_COLOR`のANSI-free出力、terminal injection、Ctrl-C 130を検査します。手動確認では、TTY上のredrawとCtrl-C、pipeおよび`NO_COLOR=1`でのESC byte不在を確認し、それぞれの前後で`events.ndjson`のSHA-256が同一であることを確認します。
+
+対象はPOSIX owner-only `AF_UNIX` ingress、単一writer、1 runのread-only pollingです。replay上限は1行64 KiB、1 log 8 MiBで、pollごとにbounded log全体を検査します。同一event rootへの複数writer、ack喪失時の再送、partial-tail修復/quarantine、cryptographic tamper detection、heartbeat、操作keybinding、browser、runtime固有adapterは未対応です。現行schemaはcapability/result-gate eventを持たないため、表示は静的なunavailable placeholderだけです。既知のcredential patternは保存前に拒否しますが、未知形式の秘密情報は検出できません。恒久的な破損と`COMPLETED`はfail closedにします。この開発toolはsandbox、承認、result-gate v2、Skills CLI配布を検証しません。
+
+### Full-history replayの計算量回帰
+
+自動回帰テストは16,000件のalternating historyを使い、producer ID accumulatorへの追加がeventごとに1回、immutable `frozenset`化がreplay終了時に1回だけであることを構造的に検査します。wall-clock値は環境差で不安定なためassertせず、性能保証も行いません。filesystem read、NDJSON parse、renderを含む再現可能な性能benchmarkは後続課題です。

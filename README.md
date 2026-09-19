@@ -190,9 +190,9 @@ python3 scripts/validate-project.py
 python3 -m unittest discover -s tests -v
 ```
 
-### Replay-first safety monitor prototype
+### Read-only safety monitor development tool
 
-`tools.safety_monitor`はリポジトリ開発者向けのPhase 0 prototypeです。Skills CLIの配布物やinstalled console scriptではなく、live TUIでもありません。次のコマンドは、認証済みUnix socket経由で`RUN_CREATED`と`PLANNED -> RUNNING`を記録し、保存ログをreplayしてplain-text snapshotを表示します。
+`tools.safety_monitor`はリポジトリ開発者向けのPOSIX-oriented development toolです。Skills CLIの配布物やinstalled console scriptではありません。次のコマンドは、認証済みUnix socket経由で`RUN_CREATED`と`PLANNED -> RUNNING`を記録し、保存ログのone-shot snapshotを表示した後、同じ1 runをread-onlyで追従します。
 
 ```bash
 MONITOR_PARENT="$(mktemp -d)"
@@ -209,13 +209,20 @@ python3 -m tools.safety_monitor snapshot \
   --allowed-parent "$MONITOR_PARENT" \
   --event-root "$EVENT_ROOT" \
   --run-id demo-run
+python3 -m tools.safety_monitor watch \
+  --allowed-parent "$MONITOR_PARENT" \
+  --event-root "$EVENT_ROOT" \
+  --run-id demo-run
+# Ctrl-Cで終了します（exit status 130）。
 ```
 
 `--allowed-parent`は既存の明示的なallowlist境界です。event/artifact rootはその配下で互いに重ならないowner-only directoryに限定され、`/`、home、allowlist外、symlinkは拒否されます。既存rootのpermissionは変更しません。
 
-このincrementはPOSIXの`AF_UNIX`だけを対象とし、single writer、再送保証なし、破損または不完全な末尾ではfail closedです。replayは1行64 KiB、合計8 MiBを上限とします。`Stream: OK`はschema、順序、状態遷移が構造上validという意味であり、ownerによるlog改変を検出するtamper proofではありません。result-gate report v2がないため`COMPLETED`は拒否します。`--watch`、ANSI redraw、browser UI、複数writer、Claude/Codex固有adapterは未実装です。viewerのsnapshotはread-onlyで、sandbox、承認機構、完了証明を提供しません。既知のcredential patternは保存前に拒否しますが、未知形式の秘密情報は検出できない残存リスクがあります。
+このincrementはPOSIX、single writer、現行の`RUN_CREATED` / `STATE_TRANSITION` schemaだけを対象とします。`watch`は1 runをsequence cursorでpollし、毎回8 MiB以下のlog全体を1回のcoherent readで取得して完全にreplayします。commit済みcursor以前のeventがin-memory historyと完全一致することも確認し、その後でcursor後のsuffixだけをcommitします。timelineは最新100件です。完全な新規batchがvalidな場合だけ表示とcursorを更新し、idle pollではframeを重複出力しません。不完全な末尾や一時的なread failureでは最後のvalid表示とcursorを保ち、同じcursorから再開します。恒久的な破損や同一process中のprefix rewriteは非zeroで終了し、新しいframeを出しません。tail修復やquarantineは行いません。
 
-Packaging、`--watch`、残りのPhase 1 eventへ進む条件は、上記vertical sliceと全回帰・security testが成功することです。
+TTYかつ`NO_COLOR`が未設定の場合だけ、固定ANSI clear/home prefixで再描画します。非TTYまたは`NO_COLOR`が存在する場合は、ANSI-free snapshotを追記します。どちらもevent由来のcontrol文字をescapeします。viewerはread-onlyで、heartbeat、keybinding、承認・停止・retry操作、browser、複数run、runtime固有adapterを持ちません。capability eventとresult-gate event/v2 evidenceは現行schemaにないため、画面には利用不可の静的placeholderを表示し、観測したとは扱いません。
+
+replayは1行64 KiB、合計8 MiBを上限とします。`Stream: OK`はschema、連続sequence、状態遷移が構造上validであり、同一`watch` processがすでにcommitしたprefixも変化していないという意味です。これはin-processの履歴整合性検出であってdurable tamper proofではありません。process再起動時は、その時点のvalidなbounded historyを現在履歴として信頼します。result-gate report v2がないため`COMPLETED`は拒否します。monitorはsandbox、承認機構、完了証明を提供しません。既知のcredential patternは保存前に拒否しますが、未知形式の秘密情報は検出できない残存リスクがあります。
 
 ## 関連資料
 

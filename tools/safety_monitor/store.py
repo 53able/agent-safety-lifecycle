@@ -7,6 +7,7 @@ import json
 import os
 import stat
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 from .events import EventError, PersistedEvent, parse_persisted, validate_id, validate_timestamp
@@ -21,6 +22,18 @@ class StoreError(RuntimeError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+@dataclass(frozen=True)
+class HistoryBatch:
+    """One bounded, coherent full-history read for a requested cursor."""
+
+    history: tuple[PersistedEvent, ...]
+    after_sequence: int
+
+    @property
+    def suffix(self) -> tuple[PersistedEvent, ...]:
+        return self.history[self.after_sequence:]
 
 
 def _absolute(path: Path | str) -> Path:
@@ -99,15 +112,26 @@ def _open_child_directory(parent_fd: int, name: str, create: bool = False) -> tu
         raise StoreError("UNSAFE_RUN_PATH", "directory path is a symlink or non-directory") from exc
 
 
-def _read_events_fd(root_fd: int, run_id: str) -> list[PersistedEvent]:
+def _validate_cursor(after_sequence: int) -> int:
+    if not isinstance(after_sequence, int) or isinstance(after_sequence, bool) or after_sequence < 0:
+        raise StoreError("INVALID_CURSOR", "after_sequence must be a non-negative integer")
+    return after_sequence
+
+
+def _read_history_fd(root_fd: int, run_id: str, after_sequence: int = 0) -> HistoryBatch:
+    after_sequence = _validate_cursor(after_sequence)
     run_fd, _ = _open_child_directory(root_fd, run_id)
     if run_fd is None:
-        return []
+        if after_sequence:
+            raise StoreError("CURSOR_AHEAD", "after_sequence is beyond the validated log end")
+        return HistoryBatch((), after_sequence)
     try:
         try:
             descriptor = os.open("events.ndjson", os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=run_fd)
         except FileNotFoundError:
-            return []
+            if after_sequence:
+                raise StoreError("CURSOR_AHEAD", "after_sequence is beyond the validated log end")
+            return HistoryBatch((), after_sequence)
         except OSError as exc:
             raise StoreError("CORRUPT_LOG", "event log path is unsafe") from exc
         try:
@@ -139,23 +163,44 @@ def _read_events_fd(root_fd: int, run_id: str) -> list[PersistedEvent]:
                         raise StoreError("CORRUPT_LOG", "event log contains an invalid event") from exc
                     if event.producer.run_id != run_id:
                         raise StoreError("CORRUPT_LOG", "event log contains a different run_id")
+                    expected_sequence = len(events) + 1
+                    if event.sequence != expected_sequence:
+                        raise StoreError("CORRUPT_LOG", "event log sequence is not contiguous from one")
                     events.append(event)
-            return events
+            if after_sequence > len(events):
+                raise StoreError("CURSOR_AHEAD", "after_sequence is beyond the validated log end")
+            return HistoryBatch(tuple(events), after_sequence)
         finally:
             os.close(descriptor)
     finally:
         os.close(run_fd)
 
 
-def read_events(event_root: Path | str, run_id: str, allowed_parent: Path | str) -> list[PersistedEvent]:
-    """Read one run without creating or modifying any filesystem entry."""
+def read_history(
+    event_root: Path | str,
+    run_id: str,
+    allowed_parent: Path | str,
+    after_sequence: int = 0,
+) -> HistoryBatch:
+    """Return one bounded full-history read tied to the requested sequence cursor."""
     validate_id(run_id, "run_id")
+    _validate_cursor(after_sequence)
     event, _, parent = _validate_configuration(event_root, None, allowed_parent)
     root_fd = _open_configured_root(event, parent, create=False)
     try:
-        return _read_events_fd(root_fd, run_id)
+        return _read_history_fd(root_fd, run_id, after_sequence)
     finally:
         os.close(root_fd)
+
+
+def read_events(
+    event_root: Path | str,
+    run_id: str,
+    allowed_parent: Path | str,
+    after_sequence: int = 0,
+) -> list[PersistedEvent]:
+    """Validate a complete run log and return events after the sequence cursor."""
+    return list(read_history(event_root, run_id, allowed_parent, after_sequence).suffix)
 
 
 class EventStore:
@@ -201,9 +246,9 @@ class EventStore:
         except OSError as exc:
             raise StoreError("ROLLBACK_FAILED", "new artifact directory could not be rolled back") from exc
 
-    def read(self, run_id: str) -> list[PersistedEvent]:
+    def read(self, run_id: str, after_sequence: int = 0) -> list[PersistedEvent]:
         validate_id(run_id, "run_id")
-        return _read_events_fd(self._event_fd, run_id)
+        return list(_read_history_fd(self._event_fd, run_id, after_sequence).suffix)
 
     @staticmethod
     def _open_append_file(directory_fd: int, name: str) -> tuple[int, bool]:

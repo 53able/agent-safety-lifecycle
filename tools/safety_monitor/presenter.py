@@ -6,6 +6,8 @@ import unicodedata
 from .events import BIDI_CONTROLS
 from .projection import RunProjection
 
+ANSI_REDRAW_PREFIX = "\x1b[2J\x1b[H"
+
 
 def escape_text(value: object) -> str:
     text = str(value)
@@ -29,16 +31,24 @@ def render_snapshot(projection: RunProjection) -> str:
         f"Run: {escape_text(projection.run_id or 'NONE')}",
         f"State: {escape_text(projection.run_state or 'NONE')}",
         f"Stream: {escape_text(projection.stream_integrity)}",
-        f"Result: {escape_text(projection.result_gate_decision)}",
+        f"Result: {escape_text(projection.result_gate_decision)} "
+        "(result-gate events and v2 evidence are unavailable in the current schema)",
+        "Capabilities: UNAVAILABLE (capability events are unsupported in the current schema)",
         f"Handoff: {escape_text(projection.handoff_status)}",
-        f"Last sequence: {projection.last_sequence}",
+        f"Last sequence: {escape_text(projection.last_sequence)}",
         "Timeline:",
     ]
     for entry in projection.timeline:
         lines.append(
-            f"  {entry.sequence} {escape_text(entry.event_type)} [{escape_text(entry.source)}] "
+            f"  {escape_text(entry.sequence)} {escape_text(entry.event_type)} [{escape_text(entry.source)}] "
             f"{escape_text(entry.state)}: {escape_text(entry.summary)}"
         )
     for warning in projection.warnings:
         lines.append(f"Warning: {escape_text(warning)}")
     return "\n".join(lines) + "\n"
+
+
+def render_frame(projection: RunProjection, ansi_redraw: bool = False) -> str:
+    """Return one complete frame; ANSI bytes are a fixed presenter-owned prefix only."""
+    snapshot = render_snapshot(projection)
+    return (ANSI_REDRAW_PREFIX if ansi_redraw else "") + snapshot

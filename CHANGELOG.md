@@ -12,6 +12,8 @@
 - owner-only Unix socket、append-only NDJSON、plain-text snapshotによるPhase 0 vertical slice
 - event contract、filesystem境界、IPC認証、terminal安全性を対象とする自動テスト
 - リアルタイム可視化とTUI-first方針のDesign Doc
+- 1 runをsequence cursorで追従するread-only `watch` subcommand（TTY固定ANSI redraw、非TTY/`NO_COLOR` ANSI-free出力）
+- batch単位commit、一時read failureからの同一cursor復帰、idle frame抑制、100件timelineを検証するdeterministic test
 
 ### 変更
 
@@ -19,14 +21,14 @@
 
 ### 検証範囲
 
-- Python 3.11と3.14でproject validatorおよび67件の自動テストが成功
-- vertical sliceとread-only snapshot replayが成功
+- Python 3.11と3.14でproject validatorおよび自動テストを実行（最新件数はvalidation実行結果を参照）
+- vertical slice、read-only snapshot replay、TTY/非TTYのone-run live watchが成功
 
 ### 未検証事項
 
-- live `--watch` TUI、ANSI redraw、Claude Code／Codex固有adapter
-- result-gate report v2に基づく`COMPLETED`判定
-- Windows IPC、複数writer、ack喪失時の再送、partial-tail自動回復
+- Claude Code／Codex固有adapter、browser UI、heartbeat、watchからの操作
+- capability eventとresult-gate report v2に基づく表示および`COMPLETED`判定
+- Windows IPC、複数writer、ack喪失時の再送、partial-tail修復/quarantine
 
 ## [0.1.0] - 2026-09-19
 

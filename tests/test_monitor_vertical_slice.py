@@ -52,12 +52,20 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("incomplete tail", result.stderr)
 
-    def test_watch_is_not_exposed(self):
+    def test_watch_is_exposed_as_a_one_run_subcommand(self):
         result = subprocess.run(
             [sys.executable, "-m", "tools.safety_monitor", "--help"],
             cwd=ROOT, capture_output=True, text=True, check=False,
         )
-        self.assertNotIn("--watch", result.stdout)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("watch", result.stdout)
+        watch_help = subprocess.run(
+            [sys.executable, "-m", "tools.safety_monitor", "watch", "--help"],
+            cwd=ROOT, capture_output=True, text=True, check=False,
+        )
+        self.assertIn("--run-id", watch_help.stdout)
+        self.assertIn("--poll-interval", watch_help.stdout)
+        self.assertNotIn("browser", watch_help.stdout)
 
 
 if __name__ == "__main__": unittest.main()

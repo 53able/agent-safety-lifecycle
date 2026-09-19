@@ -1,6 +1,7 @@
 """Pure replay and projection logic."""
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, replace
 from typing import Iterable
 
@@ -41,19 +42,34 @@ def _warn(projection: RunProjection, integrity: str, warning: str) -> RunProject
     return replace(projection, stream_integrity=integrity, warnings=projection.warnings + (warning,))
 
 
-def apply_event(
+class _ProducerIdAccumulator:
+    """Mutable producer-ID state used only while replaying a history."""
+
+    def __init__(self) -> None:
+        self.ids: set[str] = set()
+
+    def add(self, producer_event_id: str) -> None:
+        self.ids.add(producer_event_id)
+
+    def freeze(self) -> frozenset[str]:
+        return frozenset(self.ids)
+
+
+def _apply_event(
     projection: RunProjection,
     event: PersistedEvent,
-    machine: StateMachine | None = None,
+    machine: StateMachine,
+    producer_event_ids: AbstractSet[str],
+    *,
+    freeze_ids: bool,
 ) -> RunProjection:
-    machine = machine or load_state_machine()
     expected = projection.last_sequence + 1
     if event.sequence > expected:
         return _warn(projection, "INCOMPLETE", f"missing sequence {expected}")
     if event.sequence < expected:
         return _warn(projection, "INVALID", f"duplicate or reversed sequence {event.sequence}")
     producer = event.producer
-    if producer.producer_event_id in projection.producer_event_ids:
+    if producer.producer_event_id in producer_event_ids:
         return _warn(projection, "INVALID", "duplicate producer_event_id")
     if projection.last_sequence == 0:
         if producer.type != "RUN_CREATED" or event.sequence != 1:
@@ -66,7 +82,10 @@ def apply_event(
             run_state="PLANNED",
             last_sequence=1,
             timeline=(entry,),
-            producer_event_ids=frozenset({producer.producer_event_id}),
+            producer_event_ids=(
+                frozenset({producer.producer_event_id})
+                if freeze_ids else projection.producer_event_ids
+            ),
         )
     if producer.task_id != projection.task_id or producer.run_id != projection.run_id:
         return _warn(projection, "INVALID", "event identity does not match the run")
@@ -86,13 +105,43 @@ def apply_event(
         run_state=producer.state_to,
         last_sequence=event.sequence,
         timeline=(projection.timeline + (entry,))[-TIMELINE_LIMIT:],
-        producer_event_ids=projection.producer_event_ids | {producer.producer_event_id},
+        producer_event_ids=(
+            projection.producer_event_ids | {producer.producer_event_id}
+            if freeze_ids else projection.producer_event_ids
+        ),
+    )
+
+
+def apply_event(
+    projection: RunProjection,
+    event: PersistedEvent,
+    machine: StateMachine | None = None,
+) -> RunProjection:
+    """Apply one event while preserving the projection's immutable public state."""
+    resolved = machine or load_state_machine()
+    return _apply_event(
+        projection,
+        event,
+        resolved,
+        projection.producer_event_ids,
+        freeze_ids=True,
     )
 
 
 def replay(events: Iterable[PersistedEvent], machine: StateMachine | None = None) -> RunProjection:
+    """Replay a history with one mutable ID accumulator and one final freeze."""
     projection = RunProjection()
     resolved = machine or load_state_machine()
+    producer_ids = _ProducerIdAccumulator()
     for event in events:
-        projection = apply_event(projection, event, resolved)
-    return projection
+        proposed = _apply_event(
+            projection,
+            event,
+            resolved,
+            producer_ids.ids,
+            freeze_ids=False,
+        )
+        if proposed.last_sequence != projection.last_sequence:
+            producer_ids.add(event.producer.producer_event_id)
+        projection = proposed
+    return replace(projection, producer_event_ids=producer_ids.freeze())
