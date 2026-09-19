@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-20
+
 ### 追加
 
 - `RUN_CREATED`と`STATE_TRANSITION`を記録・再生するreplay-first safety monitor prototype
@@ -63,4 +65,6 @@
 - credential brokerとnetwork policyの統合
 - host-side result gateを含む実環境でのend-to-end実行
 
+[Unreleased]: https://github.com/53able/agent-safety-lifecycle/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/53able/agent-safety-lifecycle/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/53able/agent-safety-lifecycle/releases/tag/v0.1.0

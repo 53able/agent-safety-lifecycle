@@ -1,6 +1,6 @@
 [project]
 name = "agent-safety-lifecycle"
-version = "0.1.0"
+version = "0.2.0"
 description = "Agent Skills for maximizing bounded AI autonomy while minimizing human handoffs"
 requires-python = ">=3.11"
 license = { text = "MIT" }
