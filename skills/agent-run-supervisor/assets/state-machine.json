@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "states": [
+    {"name": "PLANNED", "classification": "active"},
+    {"name": "RUNNING", "classification": "active"},
+    {"name": "RETRYING", "classification": "active"},
+    {"name": "AWAITING_ELEVATION", "classification": "active"},
+    {"name": "AWAITING_RESULT_GATE", "classification": "active"},
+    {"name": "COMPLETED", "classification": "terminal"},
+    {"name": "FAILED", "classification": "terminal"},
+    {"name": "BLOCKED", "classification": "terminal"},
+    {"name": "STOPPED", "classification": "terminal"}
+  ],
+  "allowed_transitions": [
+    ["PLANNED", "RUNNING"],
+    ["RUNNING", "RETRYING"],
+    ["RETRYING", "RUNNING"],
+    ["RUNNING", "AWAITING_ELEVATION"],
+    ["AWAITING_ELEVATION", "RUNNING"],
+    ["RUNNING", "AWAITING_RESULT_GATE"],
+    ["PLANNED", "COMPLETED"], ["PLANNED", "FAILED"], ["PLANNED", "BLOCKED"], ["PLANNED", "STOPPED"],
+    ["RUNNING", "COMPLETED"], ["RUNNING", "FAILED"], ["RUNNING", "BLOCKED"], ["RUNNING", "STOPPED"],
+    ["RETRYING", "COMPLETED"], ["RETRYING", "FAILED"], ["RETRYING", "BLOCKED"], ["RETRYING", "STOPPED"],
+    ["AWAITING_ELEVATION", "COMPLETED"], ["AWAITING_ELEVATION", "FAILED"], ["AWAITING_ELEVATION", "BLOCKED"], ["AWAITING_ELEVATION", "STOPPED"],
+    ["AWAITING_RESULT_GATE", "COMPLETED"], ["AWAITING_RESULT_GATE", "FAILED"], ["AWAITING_RESULT_GATE", "BLOCKED"], ["AWAITING_RESULT_GATE", "STOPPED"]
+  ]
+}

@@ -4,6 +4,30 @@
 
 形式は[Keep a Changelog](https://keepachangelog.com/ja/1.1.0/)を参考にし、バージョン番号は[Semantic Versioning](https://semver.org/lang/ja/)に従います。
 
+## [Unreleased]
+
+### 追加
+
+- `RUN_CREATED`と`STATE_TRANSITION`を記録・再生するreplay-first safety monitor prototype
+- owner-only Unix socket、append-only NDJSON、plain-text snapshotによるPhase 0 vertical slice
+- event contract、filesystem境界、IPC認証、terminal安全性を対象とする自動テスト
+- リアルタイム可視化とTUI-first方針のDesign Doc
+
+### 変更
+
+- supervisorの状態遷移を機械可読な単一定義へ移し、既存CLIとmonitorで共有
+
+### 検証範囲
+
+- Python 3.11と3.14でproject validatorおよび67件の自動テストが成功
+- vertical sliceとread-only snapshot replayが成功
+
+### 未検証事項
+
+- live `--watch` TUI、ANSI redraw、Claude Code／Codex固有adapter
+- result-gate report v2に基づく`COMPLETED`判定
+- Windows IPC、複数writer、ack喪失時の再送、partial-tail自動回復
+
 ## [0.1.0] - 2026-09-19
 
 ### 追加

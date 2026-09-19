@@ -114,3 +114,29 @@ human-gated-impact
 - 利便性の低い統制を利用者が迂回する可能性
 
 これらは、スキルの存在だけでは解消しません。対象環境での実測、短命な権限、監査、定期的な境界テストが必要です。
+
+## Replay-first monitor prototypeの検証
+
+[リアルタイム可視化設計](realtime-visualization-design.md)の最初のincrementは、Python 3.11以降をsupport targetとし、標準ライブラリだけを使用します。CIはPython 3.11を指定していますが、実行結果は各CI runで確認します。以下のlocal commandをPython 3.11で実行したという意味ではありません。
+
+```bash
+python3 scripts/validate-project.py
+python3 -m unittest discover -s tests -v
+
+DEMO_ROOT="$(mktemp -d)"
+python3 -m tools.safety_monitor vertical-slice \
+  --allowed-parent "$DEMO_ROOT" \
+  --event-root "$DEMO_ROOT/events" \
+  --artifact-root "$DEMO_ROOT/artifacts" \
+  --task-id demo-task \
+  --run-id demo-run \
+  --envelope-hash "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+python3 -m tools.safety_monitor snapshot \
+  --allowed-parent "$DEMO_ROOT" \
+  --event-root "$DEMO_ROOT/events" \
+  --run-id demo-run
+```
+
+期待値は2 event、sequence `1, 2`、source `validator`、最終state `RUNNING`、stream `OK`です。ここで`OK`はschema、sequence、projectionの構造検査に通ったことだけを表し、logの真正性や改ざん耐性を証明しません。snapshot replayはファイルを追加・変更しません。testsは、control/bidi文字、既知secret pattern、unknown field、source spoof、bad token、unsafe/overlapping root、audit pathのsymlink、oversized request、bounded replay、欠番、不完全tail、初回append失敗後のretry、terminal後event、result-gate v2なしのcompletionを反証します。
+
+対象はPOSIX owner-only `AF_UNIX` ingressと単一のwriter processです。replay上限は1行64 KiB、1 log 8 MiBです。同一event rootへの複数writer、ack喪失時の再送、partial-tail修復、cryptographic tamper detectionは未対応です。既知のcredential patternは保存前に拒否しますが、未知形式の秘密情報は検出できません。破損ログと`COMPLETED`はfail closedにします。これはreplay-firstの開発toolであり、live監視、ANSI TUI、sandbox、承認、Skills CLI配布を検証するものではありません。

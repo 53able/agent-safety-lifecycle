@@ -11,6 +11,7 @@
 | 自動化範囲、承認境界、権限昇格要求 | [自律実行とハンドオフ](autonomy-and-handoffs.md) |
 | 代表ケース、bad-version、受入条件、残存リスク | [検証](validation.md) |
 | ディレクトリ構成、実装順、未決定事項 | [実装ロードマップ](implementation-roadmap.md) |
+| replay-first monitorと将来のTUI設計 | [リアルタイム可視化設計](realtime-visualization-design.md) |
 
 最初にこのページを読み、必要な詳細文書へ進んでください。
 
