@@ -152,7 +152,7 @@ npx skills update agent-autonomy-envelope agent-result-gate -p
 
 各スキルは`skills/<skill-name>/SKILL.md`にあります。スキル固有のテンプレート、参照資料、決定的な検査CLIは、それぞれの`assets/`、`references/`、`scripts/`に配置しています。
 
-設計思想、状態遷移、ハンドオフ方針、受入条件は[設計ドキュメント](docs/design.md)にまとめています。
+設計ドキュメントは[設計概要](docs/design.md)を入口に、[アーキテクチャ](docs/architecture.md)、[スキルカタログ](docs/skill-catalog.md)、[自律実行とハンドオフ](docs/autonomy-and-handoffs.md)、[検証戦略](docs/validation.md)、[実装ロードマップ](docs/implementation-roadmap.md)へ分割しています。
 
 ## Security boundary
 
@@ -183,7 +183,12 @@ python3 -m unittest discover -s tests -v
 
 - [`skills` CLI](https://github.com/vercel-labs/skills)
 - [Agent Skills specification](https://agentskills.io)
-- [設計ドキュメント](docs/design.md)
+- [設計概要](docs/design.md)
+- [アーキテクチャ](docs/architecture.md)
+- [スキルカタログ](docs/skill-catalog.md)
+- [自律実行とハンドオフ](docs/autonomy-and-handoffs.md)
+- [検証戦略](docs/validation.md)
+- [実装ロードマップ](docs/implementation-roadmap.md)
 
 ## License
 
