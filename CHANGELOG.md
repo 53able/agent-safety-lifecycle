@@ -14,6 +14,9 @@
 - リアルタイム可視化とTUI-first方針のDesign Doc
 - 1 runをsequence cursorで追従するread-only `watch` subcommand（TTY固定ANSI redraw、非TTY/`NO_COLOR` ANSI-free出力）
 - batch単位commit、一時read failureからの同一cursor復帰、idle frame抑制、100件timelineを検証するdeterministic test
+- immutable `MonitorViewModel` v1と512 KiB上限のsanitized JSONL watch format
+- Bun専用のprivate OpenTUI 0.5.11 read-only adapter（TTY responsive表示、非TTY/`NO_COLOR` text fallback）
+- strict protocol、40/80/120 columns in-memory renderer、shutdown、event-log不変性のBun tests
 
 ### 変更
 
@@ -22,6 +25,7 @@
 ### 検証範囲
 
 - Python 3.11と3.14でproject validatorおよび自動テストを実行（最新件数はvalidation実行結果を参照）
+- Bun 1.3.14でOpenTUI adapterのfrozen install、typecheck、自動テストを実行
 - vertical slice、read-only snapshot replay、TTY/非TTYのone-run live watchが成功
 
 ### 未検証事項
@@ -29,6 +33,7 @@
 - Claude Code／Codex固有adapter、browser UI、heartbeat、watchからの操作
 - capability eventとresult-gate report v2に基づく表示および`COMPLETED`判定
 - Windows IPC、複数writer、ack喪失時の再送、partial-tail修復/quarantine
+- OpenTUI adapterのWindows、Linux、Node実行とpackage配布
 
 ## [0.1.0] - 2026-09-19
 

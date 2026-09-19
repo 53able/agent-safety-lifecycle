@@ -148,6 +148,22 @@ watch component testsはwall-clock sleepを使わず、reader、waiter、output�
 
 対象はPOSIX owner-only `AF_UNIX` ingress、単一writer、1 runのread-only pollingです。replay上限は1行64 KiB、1 log 8 MiBで、pollごとにbounded log全体を検査します。同一event rootへの複数writer、ack喪失時の再送、partial-tail修復/quarantine、cryptographic tamper detection、heartbeat、操作keybinding、browser、runtime固有adapterは未対応です。現行schemaはcapability/result-gate eventを持たないため、表示は静的なunavailable placeholderだけです。既知のcredential patternは保存前に拒否しますが、未知形式の秘密情報は検出できません。恒久的な破損と`COMPLETED`はfail closedにします。この開発toolはsandbox、承認、result-gate v2、Skills CLI配布を検証しません。
 
+### Phase 3.1 OpenTUI adapterの検証
+
+Python 3.14とBun 1.3.14で次を実行する。Node 24はOpenTUI 0.5.11の要求（Node 26.4.0以上）を満たさないため使用しない。
+
+```bash
+python3 scripts/validate-project.py
+python3 -m unittest discover -s tests -v
+python3 -m compileall -q tools tests scripts skills
+cd tools/opentui_monitor
+bun install --frozen-lockfile
+bun run typecheck
+bun test
+```
+
+2026-09-19のDarwin arm64実測ではvalidator、Python full suite、compileall、frozen install、typecheck、Bun full suiteが成功した。Bun testsはOpenTUI test renderer上のin-memory 40/80/120 columns（実PTY resizeではない）、strict protocolのsplit/multiple/invalid UTF-8/oversize/partial/injection、update/resize/init/child failure、bounded shutdownとcleanup順序を含む。Python bridgeを直接起動するintegration testでは、前後のevent bytes・SHA-256・directory tree不変を確認した。process testsはすべて`src/main.ts`のpublic entryを起動する。実PTYかつ`NO_COLOR`なしではOpenTUI固有出力を確認し、SIGINT/SIGTERMを無視するchildへの反復SIGINTでstatus 130とchild消滅、uncooperative childのprotocol failureでstatus 1を確認した。PTY slave fdをprocess起動前に複製し、process終了後に`tcgetattr`全体が起動前と一致することをterminal restoration invariantとして両経路でassertし、`ICANON`と`ECHO`も個別にassertした。実PTYの`NO_COLOR`と非TTYではraw text出力によりpublic fallbackを確認した。public-entry PTY/non-TTY経路と実event storeを組み合わせた不変性検査は未実施である。Windows、Linux、Nodeでの実行は未検証である。
+
 ### Full-history replayの計算量回帰
 
 自動回帰テストは16,000件のalternating historyを使い、producer ID accumulatorへの追加がeventごとに1回、immutable `frozenset`化がreplay終了時に1回だけであることを構造的に検査します。wall-clock値は環境差で不安定なためassertせず、性能保証も行いません。filesystem read、NDJSON parse、renderを含む再現可能な性能benchmarkは後続課題です。

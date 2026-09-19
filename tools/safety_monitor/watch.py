@@ -6,8 +6,9 @@ import math
 from typing import TextIO
 
 from .events import PersistedEvent
-from .presenter import escape_text, render_frame
+from .presenter import ANSI_REDRAW_PREFIX, escape_text, render_view_model
 from .projection import RunProjection, replay
+from .view_model import from_projection, serialize_jsonl
 from .state_machine import StateMachine, load_state_machine
 from .store import HistoryBatch, StoreError
 
@@ -55,6 +56,7 @@ def watch_run(
     *,
     poll_interval: float,
     ansi_redraw: bool,
+    output_format: str = "text",
     machine: StateMachine | None = None,
 ) -> None:
     """Poll one run until interrupted, committing only complete valid batches."""
@@ -65,6 +67,11 @@ def watch_run(
         or poll_interval <= 0
     ):
         raise WatchError("INVALID_INTERVAL", "poll interval must be positive")
+
+    if output_format not in {"text", "view-model-jsonl"}:
+        raise WatchError("INVALID_FORMAT", "unsupported watch output format")
+    if output_format == "view-model-jsonl" and ansi_redraw:
+        raise WatchError("INVALID_FORMAT", "JSONL output cannot use ANSI redraw")
 
     resolved = machine or load_state_machine()
     committed = RunProjection()
@@ -103,11 +110,16 @@ def watch_run(
         if len(history) < cursor or history[:cursor] != committed_history:
             raise WatchError("HISTORY_REWRITTEN", "committed event history changed before the sequence cursor")
         if candidate.last_sequence > cursor:
+            model = from_projection(candidate)
+            if output_format == "view-model-jsonl":
+                frame = serialize_jsonl(model)
+            else:
+                frame = (ANSI_REDRAW_PREFIX if ansi_redraw else "") + render_view_model(model)
             # Commit projection, exact history, and cursor together only after the
-            # complete bounded history and unchanged prefix have passed validation.
+            # complete bounded history and frame have passed validation.
             committed = candidate
             committed_history = history
             cursor = candidate.last_sequence
-            stdout.write(render_frame(committed, ansi_redraw=ansi_redraw))
+            stdout.write(frame)
             stdout.flush()
         waiter(poll_interval)

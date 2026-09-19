@@ -222,6 +222,19 @@ python3 -m tools.safety_monitor watch \
 
 TTYかつ`NO_COLOR`が未設定の場合だけ、固定ANSI clear/home prefixで再描画します。非TTYまたは`NO_COLOR`が存在する場合は、ANSI-free snapshotを追記します。どちらもevent由来のcontrol文字をescapeします。viewerはread-onlyで、heartbeat、keybinding、承認・停止・retry操作、browser、複数run、runtime固有adapterを持ちません。capability eventとresult-gate event/v2 evidenceは現行schemaにないため、画面には利用不可の静的placeholderを表示し、観測したとは扱いません。
 
+任意のPhase 3.1 OpenTUI表示はprivateなBun開発packageです。Python側が検証・replay・sanitization・projectionを引き続き単独で所有し、OpenTUI側はversioned JSONL view modelだけを読みます。Bun 1.3.0以上（検証版1.3.14）が必要で、Node 24は非対応です。
+
+```bash
+cd tools/opentui_monitor
+bun install --frozen-lockfile
+bun run src/main.ts \
+  --allowed-parent "$MONITOR_PARENT" \
+  --event-root "$EVENT_ROOT" \
+  --run-id demo-run
+```
+
+TTYでは40/80/120 columnsに応答するread-only OpenTUIを表示します。非TTYまたは`NO_COLOR`ではrendererを作らず、既存Python text watchへ委譲します。操作はCtrl-Cによる終了だけです。直接bridge contractを確認する場合はPython watchへ`--format view-model-jsonl`を指定します。
+
 replayは1行64 KiB、合計8 MiBを上限とします。`Stream: OK`はschema、連続sequence、状態遷移が構造上validであり、同一`watch` processがすでにcommitしたprefixも変化していないという意味です。これはin-processの履歴整合性検出であってdurable tamper proofではありません。process再起動時は、その時点のvalidなbounded historyを現在履歴として信頼します。result-gate report v2がないため`COMPLETED`は拒否します。monitorはsandbox、承認機構、完了証明を提供しません。既知のcredential patternは保存前に拒否しますが、未知形式の秘密情報は検出できない残存リスクがあります。
 
 ## 関連資料

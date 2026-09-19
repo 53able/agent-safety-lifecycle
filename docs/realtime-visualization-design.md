@@ -1,6 +1,6 @@
 # Agent Safety Lifecycle リアルタイム可視化 Design Doc
 
-- **Status:** Partially implemented（Phase 3 read-only one-run watchまで。後続phaseはProposed）
+- **Status:** Partially implemented（Phase 3.1 optional OpenTUI presentation adapterまで。後続phaseはProposed）
 - **対象リポジトリ:** [`53able/agent-safety-lifecycle`](https://github.com/53able/agent-safety-lifecycle)
 - **基準リビジョン:** `df510044d332a64a9ab710fd42b7732caf887273`（v0.1.0）
 - **対象変更:** エージェントの実行状態、権限境界、承認待ち、成果物検査をローカル画面でリアルタイム表示する
@@ -8,9 +8,42 @@
 
 ### 実装状況（2026-09-19）
 
-commit `7ea5e2a`を基準に、Phase 3の限定incrementとして`python3 -m tools.safety_monitor watch`を実装した。対象は1 run、read-only、現行の`RUN_CREATED` / `STATE_TRANSITION` schemaだけである。sequence cursorでpollするが、cursor以前を含むbounded log全体を毎回検査し、完全な新規batchがvalidな場合だけprojectionとcursorをcommitする。idle pollはframeを増やさず、一時的なread failureでは最後のvalid frameとcursorを保持して復帰する。timelineは100件を上限とする。
+commit `aec6a05`までのPhase 3を基準に、Phase 3.1の任意OpenTUI adapterを追加した。Phase 3では`python3 -m tools.safety_monitor watch`を実装した。対象は1 run、read-only、現行の`RUN_CREATED` / `STATE_TRANSITION` schemaだけである。sequence cursorでpollするが、cursor以前を含むbounded log全体を毎回検査し、完全な新規batchがvalidな場合だけprojectionとcursorをcommitする。idle pollはframeを増やさず、一時的なread failureでは最後のvalid frameとcursorを保持して復帰する。timelineは100件を上限とする。
 
 TTYかつ`NO_COLOR`なしの場合だけpresenter所有の固定ANSI clear/home prefixを使う。非TTYまたは`NO_COLOR`ありではANSI-free frameを追記する。capabilityおよびresult-gate event/v2 evidenceは現行schemaにないため、実データを推測せず静的なunavailable placeholderを表示する。heartbeat、操作keybinding、tail修復/quarantine、複数writer、browser、runtime固有adapter、result-gate v2、package releaseはこのincrementに含まれない。
+
+## Phase 3.1: optional OpenTUI presentation adapter
+
+Phase 3.1は既存Python monitorの外側に置く、Bun専用の読み取り専用presentation adapterである。Pythonだけがevent logの読取り、schema検証、full replay、prefix consistency、sanitization、projectionを所有する。TypeScriptはevent logやartifact treeを開かず、安全状態を再計算しない。
+
+Pythonはimmutableな`MonitorViewModel`を作り、`monitor-view-model.v1` JSONLとして出力する。各frameはtask/run ID、run state、stream integrity、result gate decisionとavailability、capability availability、handoff、last sequence、最大100件のtimeline、warningsを持つ。全表示文字列はPythonでESC、C0/C1、bidi、Unicode format control、改行を可視escapeし、決定的な1行JSONを512 KiB以下に制限する。超過はfail closedである。既存text presenterも同じmodelを入力にするため、projection解釈は分岐しない。
+
+```text
+python3 -m tools.safety_monitor watch ... --format text
+python3 -m tools.safety_monitor watch ... --format view-model-jsonl
+bun run tools/opentui_monitor/src/main.ts --event-root <root> --allowed-parent <parent> --run-id <run>
+```
+
+`--format`の既定値は`text`であり、従来のsnapshot/watch表示、idle suppression、一時read failureからの復帰、exit codeを維持する。JSONL modeのstdoutはprotocol専用で、診断はsanitized stderrへ出す。adapterはshellを介さずargv配列でPython childを1つ起動し、strict v1 decoderでUTF-8、field集合、run ID、sequence単調増加、control文字、partial EOF、512 KiB上限を検査する。stderrは並行drainするがUIへ表示しない。
+
+TTYかつ`NO_COLOR`未設定の場合だけ`@opentui/core` 0.5.11の公開imperative API（`createCliRenderer`、`TextRenderable`）を使う。rendererはdemand-drivenで、validated modelまたはresize時だけ更新する。40 columnsは一列、80/120 columnsはsummaryとtimelineの二列とし、どの幅でもstate、integrity、handoff、result gate availability、capability availability、last sequenceを残す。非TTYまたは`NO_COLOR`ではOpenTUIを生成せずPython text watchへ委譲する。唯一の入力はCtrl-Cで、childへSIGINT、2秒後SIGTERM、さらに2秒後SIGKILLの順で停止し、exit 130を返す。protocol/renderer/child failureは非zeroと固定されたstderr診断になる。
+
+packageは`tools/opentui_monitor`内だけのprivate Bun packageである。`@opentui/core`をexact `0.5.11`へ固定し、Bun `>=1.3.0`（検証環境1.3.14）だけを対象とする。OpenTUI 0.5.11はNode `>=26.4.0`を要求するためNode 24は非対応であり、実行・検証に使わない。参照した公式source/docsはOpenTUI commit [`4954312d749f71e80664aa8b0e8a75384186eb99`](https://github.com/anomalyco/opentui/tree/4954312d749f71e80664aa8b0e8a75384186eb99)である。
+
+対象外はapproval、stop、retry、link、clipboard、image、mouse、browser、複数run、runtime adapter、result-gate v2、framework binding、keymap/plugin system、配布/releaseである。rollbackは`tools/opentui_monitor/`、Python view-model/format追加、対応test、この節を戻すだけでよい。event schema、保存log、migrationは変更しない。
+
+### Phase 3.1 implementation ledger
+
+| 項目 | 実測結果 |
+|---|---|
+| 実装基準 | repository `aec6a05`; OpenTUI source `4954312`; `@opentui/core` 0.5.11 |
+| 環境 | Darwin 25.6.0 arm64、Python 3.14.6、Bun 1.3.14 |
+| Python | project validator成功、91 tests成功、compileall成功 |
+| Bun | frozen install成功（16 installs / 24 packages、lock変更なし）、typecheck成功、full suite成功（件数はvalidation log参照） |
+| renderer/protocol | OpenTUI test renderer上のin-memory 40/80/120 columns、split/multiple/invalid/oversize/partial/injection、demand-driven idleを検証。40/80/120は実PTY resizeの証拠ではない |
+| lifecycle/fallback | unitでidempotentなSIGINT/SIGTERM/SIGKILL escalation、update/resize/init/child failure、cleanup順序を検証。`src/main.ts`のpublic entryを使うE2Eでは、実PTYかつ`NO_COLOR`なしでOpenTUI固有出力を確認し、SIGINT/SIGTERMを無視するchildへの反復SIGINTが130を返してchildをreapする経路とprotocol failureが1を返す経路を検証した。さらに実PTYの`NO_COLOR`と非TTYでraw text出力を確認した。実PTYではprocess起動前に複製したslave fdの`tcgetattr`全体がprocess終了後に一致することをterminal restoration invariantとし、`ICANON`と`ECHO`も個別に確認した |
+| read-only | Python bridgeを直接起動するintegration testでevent log bytes/SHA-256/directory tree不変を検証。public-entry PTY/non-TTY経路と実event storeを組み合わせた不変性検査は未実施 |
+| 未検証 | Windows、Linux、Node、package配布 |
 
 ## 1. 要約
 

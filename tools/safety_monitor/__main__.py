@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .ipc import IPCError, serve
-from .presenter import render_snapshot
+from .presenter import escape_text, render_snapshot
 from .projection import replay
 from .store import StoreError, read_events, read_history
 from .watch import WatchError, watch_run
@@ -149,6 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--allowed-parent", required=True, type=Path)
     watch.add_argument("--run-id", required=True)
     watch.add_argument("--poll-interval", type=_positive_interval, default=0.5)
+    watch.add_argument("--format", choices=("text", "view-model-jsonl"), default="text")
     internal = subparsers.add_parser("_serve", help=argparse.SUPPRESS)
     internal.add_argument("--socket", required=True, type=Path)
     internal.add_argument("--event-root", required=True, type=Path)
@@ -171,11 +172,16 @@ def main(argv: list[str] | None = None) -> int:
             reader = lambda run_id, cursor: read_history(
                 arguments.event_root, run_id, arguments.allowed_parent, cursor,
             )
-            ansi_redraw = bool(sys.stdout.isatty()) and "NO_COLOR" not in os.environ
+            ansi_redraw = (
+                arguments.format == "text"
+                and bool(sys.stdout.isatty())
+                and "NO_COLOR" not in os.environ
+            )
             try:
                 watch_run(
                     arguments.run_id, reader, time.sleep, sys.stdout, sys.stderr,
                     poll_interval=arguments.poll_interval, ansi_redraw=ansi_redraw,
+                    output_format=arguments.format,
                 )
             except KeyboardInterrupt:
                 return 130
@@ -187,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
     except (ValueError, OSError, RuntimeError, StoreError, WatchError, IPCError, subprocess.TimeoutExpired) as exc:
-        print(f"safety-monitor failed: {exc}", file=sys.stderr)
+        print(f"safety-monitor failed: {escape_text(exc)}", file=sys.stderr)
         return 1
     return 2
 

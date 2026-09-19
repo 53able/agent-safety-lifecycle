@@ -1,4 +1,5 @@
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,10 +45,13 @@ class StopAfter:
             raise KeyboardInterrupt
 
 
-def run_until_interrupt(reader, *, ansi=False, waits=1):
+def run_until_interrupt(reader, *, ansi=False, waits=1, output_format="text"):
     stdout, stderr = io.StringIO(), io.StringIO()
     with unittest.TestCase().assertRaises(KeyboardInterrupt):
-        watch_run("run-1", reader, StopAfter(waits), stdout, stderr, poll_interval=0.01, ansi_redraw=ansi)
+        watch_run(
+            "run-1", reader, StopAfter(waits), stdout, stderr,
+            poll_interval=0.01, ansi_redraw=ansi, output_format=output_format,
+        )
     return stdout.getvalue(), stderr.getvalue()
 
 
@@ -65,6 +69,37 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(cursors, [0, 2])
         self.assertEqual(output.count("Last sequence:"), 1)
         self.assertIn("Last sequence: 2", output)
+
+    def test_jsonl_initial_frame_idle_suppression_and_recovery(self):
+        first = (created(), transition(2, "PLANNED", "RUNNING"))
+        outcomes = [first, StoreError("INCOMPLETE_TAIL", "partial"), first + (transition(3, "RUNNING", "RETRYING"),)]
+
+        def reader(_run_id, cursor):
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return HistoryBatch(outcome, cursor)
+
+        output, errors = run_until_interrupt(reader, waits=3, output_format="view-model-jsonl")
+        frames = [json.loads(line) for line in output.splitlines()]
+        self.assertEqual([frame["last_sequence"] for frame in frames], [2, 3])
+        self.assertTrue(all(frame["schema"] == "monitor-view-model.v1" for frame in frames))
+        self.assertNotIn("Task:", output)
+        self.assertIn("read recovered", errors)
+
+    def test_jsonl_invalid_batch_emits_no_partial_frame(self):
+        first = (created(), transition(2, "PLANNED", "RUNNING"))
+        invalid = first + (transition(4, "RUNNING", "RETRYING"),)
+        stdout = io.StringIO()
+        batches = [first, invalid]
+        with self.assertRaises(WatchError):
+            watch_run(
+                "run-1", lambda _run, cursor: HistoryBatch(batches.pop(0), cursor),
+                StopAfter(5), stdout, io.StringIO(), poll_interval=1, ansi_redraw=False,
+                output_format="view-model-jsonl",
+            )
+        self.assertEqual(len(stdout.getvalue().splitlines()), 1)
+        self.assertEqual(json.loads(stdout.getvalue())["last_sequence"], 2)
 
     def test_transient_failure_preserves_cursor_and_recovers_once(self):
         cursors = []
@@ -243,6 +278,23 @@ class WatchTests(unittest.TestCase):
                     status = main(["watch", "--event-root", "/tmp/events", "--allowed-parent", "/tmp", "--run-id", "run-1"])
                 self.assertEqual(status, 130)
                 self.assertEqual(called.call_args.kwargs["ansi_redraw"], expected_ansi)
+                self.assertEqual(called.call_args.kwargs["output_format"], "text")
+
+    def test_cli_jsonl_never_enables_ansi(self):
+        class Output(io.StringIO):
+            def isatty(self): return True
+
+        with (
+            mock.patch("tools.safety_monitor.__main__.sys.stdout", Output()),
+            mock.patch("tools.safety_monitor.__main__.watch_run", side_effect=KeyboardInterrupt) as called,
+        ):
+            status = main([
+                "watch", "--event-root", "/tmp/events", "--allowed-parent", "/tmp",
+                "--run-id", "run-1", "--format", "view-model-jsonl",
+            ])
+        self.assertEqual(status, 130)
+        self.assertFalse(called.call_args.kwargs["ansi_redraw"])
+        self.assertEqual(called.call_args.kwargs["output_format"], "view-model-jsonl")
 
 
 if __name__ == "__main__":

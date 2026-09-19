@@ -6,3 +6,4 @@ __pycache__/
 dist/
 build/
 coverage.xml
+/tools/opentui_monitor/node_modules/
