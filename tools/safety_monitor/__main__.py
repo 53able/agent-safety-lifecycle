@@ -17,6 +17,7 @@ from .ipc import IPCError, serve
 from .presenter import escape_text, render_snapshot
 from .projection import replay
 from .store import StoreError, read_events, read_history
+from .viewer_launcher import ViewerError, open_viewer, viewer_entry
 from .watch import WatchError, watch_run
 
 
@@ -150,6 +151,14 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--run-id", required=True)
     watch.add_argument("--poll-interval", type=_positive_interval, default=0.5)
     watch.add_argument("--format", choices=("text", "view-model-jsonl"), default="text")
+    viewer = subparsers.add_parser("open-viewer", help="open a read-only viewer for an existing run")
+    viewer.add_argument("--event-root", required=True, type=Path)
+    viewer.add_argument("--artifact-root", required=True, type=Path)
+    viewer.add_argument("--allowed-parent", required=True, type=Path)
+    viewer.add_argument("--run-id", required=True)
+    viewer.add_argument("--mode", choices=("auto", "manual", "off"), default="auto")
+    viewer_entry_parser = subparsers.add_parser("_viewer-entry", help=argparse.SUPPRESS)
+    viewer_entry_parser.add_argument("--control", required=True, type=Path)
     internal = subparsers.add_parser("_serve", help=argparse.SUPPRESS)
     internal.add_argument("--socket", required=True, type=Path)
     internal.add_argument("--event-root", required=True, type=Path)
@@ -186,13 +195,22 @@ def main(argv: list[str] | None = None) -> int:
             except KeyboardInterrupt:
                 return 130
             return 0
+        if arguments.command == "open-viewer":
+            result = open_viewer(
+                arguments.allowed_parent, arguments.event_root, arguments.artifact_root,
+                arguments.run_id, arguments.mode,
+            )
+            print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+            return 0
+        if arguments.command == "_viewer-entry":
+            return viewer_entry(arguments.control)
         if arguments.command == "_serve":
             serve(
                 arguments.socket, arguments.event_root, arguments.artifact_root, arguments.allowed_parent,
                 arguments.token_fd, arguments.max_requests,
             )
             return 0
-    except (ValueError, OSError, RuntimeError, StoreError, WatchError, IPCError, subprocess.TimeoutExpired) as exc:
+    except (ValueError, OSError, RuntimeError, StoreError, ViewerError, WatchError, IPCError, subprocess.TimeoutExpired) as exc:
         print(f"safety-monitor failed: {escape_text(exc)}", file=sys.stderr)
         return 1
     return 2

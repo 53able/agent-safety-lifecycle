@@ -120,6 +120,33 @@ class EnvelopeTests(unittest.TestCase):
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_viewer_launch_is_deterministic_in_both_lifecycle_skills(self):
+        command = (
+            "<trusted-python> -I <trusted-monitor-checkout>/tools/safety_monitor_bootstrap.py "
+            "open-viewer --allowed-parent <monitor-parent> --event-root <event-root> "
+            "--artifact-root <artifact-root> --run-id <run-id> --mode auto"
+        )
+        unsafe_command = "python3 -m tools.safety_monitor open-viewer"
+        for skill in ("agent-run-supervisor", "agent-safety-lifecycle"):
+            with self.subTest(skill=skill):
+                text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
+                self.assertIn("durableな`RUN_CREATED`", text)
+                self.assertIn("configが明示的に承認", text)
+                self.assertIn(command, text)
+                self.assertIn("host/configが提供するabsolute path", text)
+                self.assertIn("supervised agentのwritable root外", text)
+                self.assertIn("expected owner", text)
+                self.assertIn("group/otherから書込み不可", text)
+                self.assertIn("pinned revisionまたはdigest", text)
+                self.assertIn("MUST（必ず）", text)
+                self.assertIn("`monitor unavailable`", text)
+                self.assertIn("eventを合成せず", text)
+                self.assertIn("非致命的", text)
+                self.assertIn("非 authoritative", text)
+                self.assertIn("initial bootstrap", text)
+                self.assertIn("child bootstrap", text)
+                self.assertNotIn(unsafe_command, text)
+
     def test_valid_transition(self):
         result = run_script("agent-run-supervisor", "validate-transition.py", "RUNNING", "RETRYING")
         self.assertEqual(result.returncode, 0, result.stderr)

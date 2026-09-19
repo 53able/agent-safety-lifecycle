@@ -216,7 +216,24 @@ python3 -m tools.safety_monitor watch \
 # Ctrl-Cで終了します（exit status 130）。
 ```
 
-`--allowed-parent`は既存の明示的なallowlist境界です。event/artifact rootはその配下で互いに重ならないowner-only directoryに限定され、`/`、home、allowlist外、symlinkは拒否されます。既存rootのpermissionは変更しません。
+保存済みrunにはhost側からviewerを開けます。`open-viewer`は最初にlog全体をread/replayし、durableな`RUN_CREATED`から有効なcurrent projectionを作れた場合だけ起動を検討します。`auto`（既定）は、`TMUX`をsocket、pid、session indexの3 fieldとしてstrictに検査し、tmuxが返すpaneとsession IDが`TMUX_PANE`とsession indexへ正確に一致したときだけ、そのpaneを置き換えずdetached splitを作ります。`manual`と`off`はprocessを起動しません。
+
+```text
+<trusted-python> -I <trusted-monitor-checkout>/tools/safety_monitor_bootstrap.py open-viewer \
+  --allowed-parent "$MONITOR_PARENT" \
+  --event-root "$EVENT_ROOT" \
+  --artifact-root "$ARTIFACT_ROOT" \
+  --run-id demo-run \
+  --mode auto
+```
+
+initial skill bootstrapでは、`<trusted-python>`と`<trusted-monitor-checkout>`をhost/configがabsolute pathで提供します。checkoutはsupervised agentのwritable root外に置き、expected ownerでgroup/otherから書込み不可とし、起動前にhostが承認したpinned revisionまたはdigestとの一致を検証します。durable run、承認済みconfig、path、配置、owner、permission、revision/digestのいずれかが欠ける、または検証できない場合は、eventを合成せず`monitor unavailable`を記録します。cwd依存のmodule entrypointはinitial bootstrapに使用しません。
+
+結果はboundedな1行JSONです。tmuxがない、現在paneを確認できない、またはsplitに失敗した場合も、runが有効なら終了code 0で`status: "manual"`とshell-safeなBun/Python手動commandを返します。`off`は`status: "off"`です。同じcanonical runを示すpane optionがあれば`status: "duplicate"`として重複splitを抑止します。このtagはUX metadataでありsecurity boundaryではありません。
+
+信頼済みinitial bootstrapの後、自動splitはowner-onlyの`$MONITOR_PARENT/.safety-monitor-viewer-control/`へ一回限りのstrict manifestを作り、viewer child用に同じtrusted checkout内のabsolute bootstrapを`python -I`で実行してmanifest pathだけをshell-safeに渡します。child bootstrapの隔離はinitial bootstrapのcheckout信頼検証を代替しません。splitのcwdはcanonical repository rootへ固定します。entryはcanonical parent/event/artifact rootとrunを再検証してmanifestをbest-effortで削除します。Bun 1.3.0以上と既存のfrozen dependenciesが揃う場合だけOpenTUI public entryをexecし、それ以外は同じabsolute bootstrap経由のPython text watchをexecします。viewerへ渡す環境変数は`PATH`、`HOME`、terminal・locale・temporary-directory・`NO_COLOR`関連だけに制限し、任意のcredentialは継承しません。dependency installやnetwork accessは行いません。Ctrl-Cは新しいviewer paneだけを閉じます。Terminal.app、iTerm、新規tmux sessionは起動しません。
+
+`--allowed-parent`は既存の明示的なallowlist境界です。`--event-root`と必須の`--artifact-root`は既存のcanonical owner-only directoryとして検証され、その配下で互いに重ならないことを要求します。`/`、home、allowlist外、symlinkは拒否し、rootの作成やpermission変更は行いません。`$MONITOR_PARENT/.safety-monitor-viewer-control/`は予約領域で、event/artifact rootとの一致・包含を拒否します。viewerのopen/closeはevent/artifactのbytes、hash、tree、metadataを変更しません。
 
 このincrementはPOSIX、single writer、現行の`RUN_CREATED` / `STATE_TRANSITION` schemaだけを対象とします。`watch`は1 runをsequence cursorでpollし、毎回8 MiB以下のlog全体を1回のcoherent readで取得して完全にreplayします。commit済みcursor以前のeventがin-memory historyと完全一致することも確認し、その後でcursor後のsuffixだけをcommitします。timelineは最新100件です。完全な新規batchがvalidな場合だけ表示とcursorを更新し、idle pollではframeを重複出力しません。不完全な末尾や一時的なread failureでは最後のvalid表示とcursorを保ち、同じcursorから再開します。恒久的な破損や同一process中のprefix rewriteは非zeroで終了し、新しいframeを出しません。tail修復やquarantineは行いません。
 

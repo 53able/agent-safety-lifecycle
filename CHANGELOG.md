@@ -17,6 +17,8 @@
 - immutable `MonitorViewModel` v1と512 KiB上限のsanitized JSONL watch format
 - Bun専用のprivate OpenTUI 0.5.11 read-only adapter（TTY responsive表示、非TTY/`NO_COLOR` text fallback）
 - strict protocol、40/80/120 columns in-memory renderer、shutdown、event-log不変性のBun tests
+- durableな既存runだけを対象にするhost-only `open-viewer` launcher（`auto` / `manual` / `off`、tmux detached split、duplicate pane tag、shell-safe manual command）
+- artifact rootを含むowner-only one-shot control manifestのstrict検証と、Bun/frozen dependency不在時のisolated absolute-bootstrap Python text watch fallback
 
 ### 変更
 
@@ -27,6 +29,7 @@
 - Python 3.11と3.14でproject validatorおよび自動テストを実行（最新件数はvalidation実行結果を参照）
 - Bun 1.3.14でOpenTUI adapterのfrozen install、typecheck、自動テストを実行
 - vertical slice、read-only snapshot replay、TTY/非TTYのone-run live watchが成功
+- launcherのinvalid run拒否、no-tmux/manual/off、strict tmux session identity、detached split、duplicate suppression、root/control分離、environment scrub、fallback、event/artifact tree・metadata不変性を自動検証。shadow moduleとcross-sessionを含むreal tmux testはopt-in
 
 ### 未検証事項
 
@@ -34,6 +37,7 @@
 - capability eventとresult-gate report v2に基づく表示および`COMPLETED`判定
 - Windows IPC、複数writer、ack喪失時の再送、partial-tail修復/quarantine
 - OpenTUI adapterのWindows、Linux、Node実行とpackage配布
+- launcherのWindows、tmux以外のmultiplexer、同時launch raceに対する排他的なduplicate保証
 
 ## [0.1.0] - 2026-09-19
 

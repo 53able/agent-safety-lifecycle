@@ -25,8 +25,10 @@ description: AIエージェントへタスクを渡す前のリスク分類か�
 
 **Step 3: 状態を集約する**
 1. 専門スキルの判定、証拠パス、未検証事項、残存リスクをSafety Caseへ追記する。
-2. `python3 scripts/validate-safety-case.py <safety-case>`を実行する。
-3. 検証に失敗した場合は、不足セクションを補い、検証を再実行する。
+2. 外部実行基盤またはtrusted adapterがdurableな`RUN_CREATED`をすでに記録し、monitor用の`allowed-parent`、`event-root`、`artifact-root`を固定したconfigが明示的に承認されている場合、supervisor/lifecycleは`<trusted-python> -I <trusted-monitor-checkout>/tools/safety_monitor_bootstrap.py open-viewer --allowed-parent <monitor-parent> --event-root <event-root> --artifact-root <artifact-root> --run-id <run-id> --mode auto`を**MUST（必ず）**自動実行する。`<trusted-python>`と`<trusted-monitor-checkout>`はhost/configが提供するabsolute pathでなければならない。checkoutはsupervised agentのwritable root外に置き、expected ownerでありgroup/otherから書込み不可であること、かつhostが承認したpinned revisionまたはdigestとの一致を起動前に検証する。durable run、承認済みconfig、absolute path、配置、owner、permission、revision/digestのいずれかが欠ける、または検証できない場合は、demo eventを含むeventを合成せず`monitor unavailable`を**MUST（必ず）**記録して先へ進む。cwdから解決されるmodule entrypointを使用してはならない。
+3. このviewer起動は、信頼済みのinitial bootstrapで既存runを開く任意の読み取り専用表示である。その後のtmux/viewer child bootstrapにもabsolute pathと`-I`を使用するが、これはinitial bootstrapの信頼要件を代替しない。Claude Code、Codex、その他runtimeの汎用観測やhook coverageを意味しない。起動失敗やviewer不在は非致命的かつ非 authoritativeで、run stateを変更せず、安全判断の根拠にしない。
+4. `python3 scripts/validate-safety-case.py <safety-case>`を実行する。
+5. 検証に失敗した場合は、不足セクションを補い、検証を再実行する。
 
 **Step 4: ハンドオフを制御する**
 1. Autonomy Envelope内の正常系では、人間への逐次確認を追加しない。

@@ -117,7 +117,7 @@ human-gated-impact
 
 ## Replay-first monitor prototypeの検証
 
-[リアルタイム可視化設計](realtime-visualization-design.md)の最初のincrementは、Python 3.11以降をsupport targetとし、標準ライブラリだけを使用します。CIはPython 3.11を指定していますが、実行結果は各CI runで確認します。以下のlocal commandをPython 3.11で実行したという意味ではありません。
+[リアルタイム可視化設計](realtime-visualization-design.md)の最初のincrementは、Python 3.11以降をsupport targetとし、標準ライブラリだけを使用します。CI結果は各runで確認します。以下は再現用の一般形であり、この変更に対して実行したPython 3.11.14と3.14.6のlocal matrix結果は後段の検証記録に明記します。
 
 ```bash
 python3 scripts/validate-project.py
@@ -162,7 +162,28 @@ bun run typecheck
 bun test
 ```
 
-2026-09-19のDarwin arm64実測ではvalidator、Python full suite、compileall、frozen install、typecheck、Bun full suiteが成功した。Bun testsはOpenTUI test renderer上のin-memory 40/80/120 columns（実PTY resizeではない）、strict protocolのsplit/multiple/invalid UTF-8/oversize/partial/injection、update/resize/init/child failure、bounded shutdownとcleanup順序を含む。Python bridgeを直接起動するintegration testでは、前後のevent bytes・SHA-256・directory tree不変を確認した。process testsはすべて`src/main.ts`のpublic entryを起動する。実PTYかつ`NO_COLOR`なしではOpenTUI固有出力を確認し、SIGINT/SIGTERMを無視するchildへの反復SIGINTでstatus 130とchild消滅、uncooperative childのprotocol failureでstatus 1を確認した。PTY slave fdをprocess起動前に複製し、process終了後に`tcgetattr`全体が起動前と一致することをterminal restoration invariantとして両経路でassertし、`ICANON`と`ECHO`も個別にassertした。実PTYの`NO_COLOR`と非TTYではraw text出力によりpublic fallbackを確認した。public-entry PTY/non-TTY経路と実event storeを組み合わせた不変性検査は未実施である。Windows、Linux、Nodeでの実行は未検証である。
+2026-09-20のDarwin arm64実測ではvalidator、Python full suite、compileall、frozen install、typecheck、Bun full suiteが成功した。Bun testsはOpenTUI test renderer上のin-memory 40/80/120 columns（実PTY resizeではない）、strict protocolのsplit/multiple/invalid UTF-8/oversize/partial/injection、update/resize/init/child failure、bounded shutdownとcleanup順序を含む。Python bridgeを直接起動するintegration testでは、前後のevent bytes・SHA-256・directory tree不変を確認した。process testsはすべて`src/main.ts`のpublic entryを起動する。実PTYかつ`NO_COLOR`なしではOpenTUI固有出力を確認し、SIGINT/SIGTERMを無視するchildへの反復SIGINTでstatus 130とchild消滅、uncooperative childのprotocol failureでstatus 1を確認した。PTY slave fdをprocess起動前に複製し、process終了後に`tcgetattr`全体が起動前と一致することをterminal restoration invariantとして両経路でassertし、`ICANON`と`ECHO`も個別にassertした。実PTYの`NO_COLOR`と非TTYではraw text出力によりpublic fallbackを確認した。public-entry PTY/non-TTY経路と実event storeを組み合わせた不変性検査は未実施である。Windows、Linux、Nodeでの実行は未検証である。
+
+### Existing-run viewer launcherの検証
+
+公開entryは次で検証する。通常suiteはtmuxの有無へ依存せず、real tmux検査だけを明示opt-inにする。
+
+```bash
+python3 -m unittest tests.test_monitor_viewer_launcher -v
+RUN_REAL_TMUX_TESTS=1 python3 -m unittest \
+  tests.test_monitor_viewer_launcher.ViewerLauncherTests.test_real_tmux_detached_split \
+  tests.test_monitor_viewer_launcher.ViewerLauncherTests.test_real_tmux_rejects_cross_session_pane_on_same_server -v
+```
+
+通常testはmissing/corrupt/invalid runでlaunchしないこと、`manual`/`off`、tmux不在時のshell-safe manual result、strictな`TMUX` identity、same-server cross-session pane拒否、確認済みtmuxでのdetached split、current paneとの分離、pane tagによるduplicate suppressionを検査する。spaceとshell metacharacterを含むpathはcommandとして評価せずdataとして扱い、run IDは既存schemaのstrict ID検証を維持する。control manifestについてowner-only directory/file、artifact rootを含むstrict field集合、canonical parent/event/artifact/runの再検証、symlink・permission・schema・path attackの拒否、consume後のunlinkを検査する。event/artifact rootは既存owner-only・相互非包含を要求し、作成もchmodもせず、予約control directoryとのexact/nested collisionを拒否する。
+
+initial skill bootstrapはhost/config提供のabsolute trusted checkoutにある`tools/safety_monitor_bootstrap.py`をabsolute trusted Pythonから`-I`で起動する。checkoutはsupervised agentのwritable root外、expected owner、group/other書込み不可、承認済みpinned revisionまたはdigest一致を前提とし、不足・検証不能時はeventを合成せず`monitor unavailable`とする。通常suiteのpublic-entry integration testはhostile cwdとhostile `PYTHONPATH` shadow packageからこのexact bootstrap subprocessを`manual` modeで起動し、sentinel非実行を確認する。
+
+信頼済みinitial bootstrapの後、Bun missingとfrozen dependency missingではviewer child用のabsolute bootstrapを`python -I`で実行するPython text watchへfallbackし、利用可能なBun経路は既存OpenTUI public entryだけをexecする。child bootstrapの隔離はinitial bootstrapのtrust前提を代替しない。viewer process環境は必要な非secret変数だけへallowlistし、任意credentialを除外する。public `open-viewer` integration testはeventとartifact双方のtree、file bytes、SHA-256、mode・owner・size・mtime metadataが前後で同一であることを検査する。control manifestはevent/artifact rootの外にある専用directoryだけへ一時作成される。real tmux testsは`RUN_REAL_TMUX_TESTS=1`かつtmuxがある場合だけtemporary sessionsを使う。detached split testもhostile cwd/PYTHONPATHからexact initial bootstrap subprocessを起動し、shadow package非実行、canonical repository cwdを確認する。もう1件はsame-server cross-sessionを拒否する。通常suiteでは両方をskipする。
+
+2026-09-20のDarwin arm64実測では、Python 3.11.14と3.14.6のfull suiteはいずれも109 tests中107成功・通常のreal-tmux 2件skipで、既存91 testsを含めて成功した。real tmux opt-in testsも2件成功した。project validator、compileall、diff-checkも成功した。Bun 1.3.14はfrozen install（16 installs / 24 packages、変更なし）、typecheck、24 testsが成功した。
+
+この検査はpane optionをsecurity boundaryや排他的lockとして証明しない。同時launcher間のrace、tmux以外のterminal multiplexer、Terminal.app/iTerm、generic Claude/Codex hook、agent command execution、approval/control操作は対象外である。viewer availabilityと失敗はrun stateへ影響しない。
 
 ### Full-history replayの計算量回帰
 

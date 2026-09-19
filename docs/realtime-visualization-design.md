@@ -1,6 +1,6 @@
 # Agent Safety Lifecycle リアルタイム可視化 Design Doc
 
-- **Status:** Partially implemented（Phase 3.1 optional OpenTUI presentation adapterまで。後続phaseはProposed）
+- **Status:** Partially implemented（Phase 3.1 optional OpenTUI presentation adapterとhost-only existing-run viewer launcherまで。後続phaseはProposed）
 - **対象リポジトリ:** [`53able/agent-safety-lifecycle`](https://github.com/53able/agent-safety-lifecycle)
 - **基準リビジョン:** `df510044d332a64a9ab710fd42b7732caf887273`（v0.1.0）
 - **対象変更:** エージェントの実行状態、権限境界、承認待ち、成果物検査をローカル画面でリアルタイム表示する
@@ -44,6 +44,16 @@ packageは`tools/opentui_monitor`内だけのprivate Bun packageである。`@op
 | lifecycle/fallback | unitでidempotentなSIGINT/SIGTERM/SIGKILL escalation、update/resize/init/child failure、cleanup順序を検証。`src/main.ts`のpublic entryを使うE2Eでは、実PTYかつ`NO_COLOR`なしでOpenTUI固有出力を確認し、SIGINT/SIGTERMを無視するchildへの反復SIGINTが130を返してchildをreapする経路とprotocol failureが1を返す経路を検証した。さらに実PTYの`NO_COLOR`と非TTYでraw text出力を確認した。実PTYではprocess起動前に複製したslave fdの`tcgetattr`全体がprocess終了後に一致することをterminal restoration invariantとし、`ICANON`と`ECHO`も個別に確認した |
 | read-only | Python bridgeを直接起動するintegration testでevent log bytes/SHA-256/directory tree不変を検証。public-entry PTY/non-TTY経路と実event storeを組み合わせた不変性検査は未実施 |
 | 未検証 | Windows、Linux、Node、package配布 |
+
+## Host-only existing-run viewer launcher
+
+skillが起動する公開entryは`<trusted-python> -I <trusted-monitor-checkout>/tools/safety_monitor_bootstrap.py open-viewer ...`である。`<trusted-python>`とcheckoutはhost/configがabsolute pathで提供し、checkoutはsupervised agentのwritable root外、expected owner、group/other書込み不可で、承認済みpinned revisionまたはdigestとの一致を起動前に検証する。durable run、承認済みconfig、これらのtrust前提のどれかが欠ける、または検証不能ならeventを合成せず`monitor unavailable`とする。cwd依存のmodule entrypointは使わない。このentryはevent producerやagent wrapperではなく、外部またはtrusted adapterがすでに作成した1 runだけを開く任意のlauncherである。起動前にbounded logを完全にread/replayし、sequence 1のdurableな`RUN_CREATED`を含むvalid current projectionを要求する。missing、incomplete、corrupt、invalid projectionではpaneを作らない。launcherとviewerはevent/artifact dataを書き換えない。
+
+`--mode auto`は`TMUX`をsocket、pid、session indexの3 fieldとしてstrictにparseし、実行可能なtmuxが返すpane IDとsession IDが`TMUX_PANE`および`$<session-index>`へ正確に一致することを確認する。確認できた場合だけcurrent paneをtargetとしてdetached splitを作り、current pane自体は使用・置換しない。session作成、Terminal.app/iTerm automationは行わない。`manual`と`off`は起動しない。有効なrunを確認した後のtmux不在・失敗は非致命的で、bounded JSON resultにshell-safeなBun/Python手動commandを含める。
+
+run IDとevent rootはtmux用のad-hoc commandへ渡さない。`--artifact-root`も必須とし、event/artifact rootは既存のcanonical owner-only・相互非包含directoryとして検証する。approved parent直下の`.safety-monitor-viewer-control`は予約領域であり、両rootとの一致・包含を拒否する。信頼済みinitial skill bootstrapの後、専用owner-only control directoryにartifact rootを含むstrict one-shot manifestを置き、tmuxにはviewer child用のabsolute bootstrapを`python -I`で起動するshell-quoted commandとcontrol pathだけを渡す。このchild bootstrap隔離はinitial bootstrapのcheckout信頼検証を代替しない。split cwdもcanonical repository rootへ固定する。entryはmanifestのregular-file/ownership/permission/schema/canonical pathと全rootを再検査し、runを再度read/replayしてからmanifestをbest-effortでunlinkする。Bun 1.3.0以上かつ既存のOpenTUI 0.5.11 frozen dependencyがある場合だけpublic Bun entryをexecし、なければabsolute bootstrap経由のPython text watchをexecする。どちらも`execve`で`PATH`、`HOME`、terminal・locale・temporary-directory・`NO_COLOR`関連だけを渡し、任意のcredentialを継承しない。installとnetworkは実行しない。
+
+canonical parent/event/runのdigestをtmux pane optionへ記録し、同じtagのpaneがあれば重複起動を抑止する。pane tagは競合を完全に排除するlockでもsecurity boundaryでもなくUX metadataである。viewerの唯一の操作はCtrl-C終了であり、元のagent paneやrun stateには作用しない。このlauncherはgeneric runtime observation、Claude/Codex hook、approval/control coverageを提供しない。
 
 ## 1. 要約
 
